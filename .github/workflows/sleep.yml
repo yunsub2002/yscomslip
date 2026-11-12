@@ -1,0 +1,47 @@
+name: 수면음악 자동 제작
+
+on:
+  schedule:
+    - cron: '7 10 * * 2,5'      # 매주 화·금 19:07 (한국 시간) — 한 번에 1편씩, 주 2편
+  workflow_dispatch:
+    inputs:
+      theme:
+        description: '테마 (auto = 순서대로 돌아가며)'
+        type: choice
+        default: auto
+        options: [auto, rain_lullaby, brown_noise, waves_piano, womb, lullaby, rain_only, fire_piano, white_noise, snow_harp, firefly_lullaby]
+      count:
+        description: '이번에 만들 편수'
+        default: '1'
+      minutes:
+        description: '영상 길이(분)'
+        default: '60'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sleep
+  cancel-in-progress: false
+
+jobs:
+  make:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: 프로그램 설치
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg fonts-noto-cjk
+          pip install -q -r requirements.txt
+      - name: 영상 만들기 + 올리기
+        env:
+          GH_TOKEN: ${{ github.token }}
+          THEME: ${{ github.event.inputs.theme || 'auto' }}
+          COUNT: ${{ github.event.inputs.count || '1' }}
+          MINUTES: ${{ github.event.inputs.minutes || '60' }}
+        run: python sleep_bot/weekly.py
