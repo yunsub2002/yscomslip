@@ -39,13 +39,18 @@ def thumbnail(th, seed, path, vol=None, minutes=60):
     img = Image.alpha_composite(img, ov); d = ImageDraw.Draw(img)
     moon = Image.new('RGBA', (40, 40), (0, 0, 0, 0)); md = ImageDraw.Draw(moon); md.ellipse([2, 2, 38, 38], fill=(255, 226, 150, 255)); md.ellipse([14, -4, 48, 30], fill=(0, 0, 0, 0))
     img.alpha_composite(moon, (bx + 18, by + 13))
-    d.text((bx + 70, by + 6), f'{minutes // 60}시간' if minutes % 60 == 0 else f'{minutes}분', font=sm, fill=(255, 255, 255))
+    d.text((bx + 70, by + 6), dur_ko(minutes).strip(), font=sm, fill=(255, 255, 255))
     if vol and vol > 1: d.text((x0, H - 92), f'Vol.{vol}', font=sm, fill=(255, 255, 255, 170))
     img.convert('RGB').save(path, quality=92)
 
 
+def dur_ko(minutes):
+    h, m = divmod(int(minutes), 60)
+    return (f'{h}시간' if h else '') + (f' {m}분' if m else '') if h else f'{m}분'
+
+
 def yt_text(th, vol, songs, minutes):
-    title = f"{th['emoji']} {th['name']} {minutes // 60 if minutes >= 60 else minutes}{'시간' if minutes >= 60 else '분'} | {th['sub']}" + (f' Vol.{vol}' if vol and vol > 1 else '')
+    title = f"{th['emoji']} {th['name']} {dur_ko(minutes).strip()} | {th['sub']}" + (f' Vol.{vol}' if vol and vol > 1 else '')
     keys = []
     for s in songs[:6]:
         nm = NOTE[s['tonic'] % 12]; keys.append(f"{nm}장조 {s['meter']}/4박자 ♩={s['bpm']}")
@@ -53,7 +58,7 @@ def yt_text(th, vol, songs, minutes):
     tags = th['tags']
     body = f"""{th['desc']}
 
-🌙 {minutes}분 동안 끊김 없이 이어지고, 시작은 천천히 커지고 마지막 1분은 소리가 서서히 작아져 잠을 깨우지 않아요.
+🌙 {dur_ko(minutes).strip()} 동안 끊김 없이 이어지고, 시작은 천천히 커지고 마지막 1분은 소리가 서서히 작아져 잠을 깨우지 않아요.
 {music}💤 화면 밝기를 낮추고, 볼륨은 작게 틀어 주세요.
 
 ━━━━━━━━━━
@@ -75,14 +80,14 @@ def make(theme, seed, minutes, out, vol=None, seg=90.0, log=print):
     gain = max(-12, min(12, -21.0 - rms))                    # 평균 -21dBFS (잔잔하게)
     log(f'      평균 {rms:.1f}dBFS → {gain:+.1f}dB 보정 · 곡 {len(songs)}개 · {time.time() - t0:.0f}초')
     log(f'[2/4] 배경 영상 루프 — {", ".join(th["scenes"])}')
-    loop = out / f'{name}_loop.mp4'; V.make_loop(th['scenes'], seed, str(loop), seg=seg)
+    loop = out / f'{name}_loop.mp4'; V.make_loop(th['scenes'], seed, str(loop), seg=seg, crf=21 if minutes <= 90 else 24, maxrate='1500k' if minutes <= 90 else '850k')
     log(f'      루프 {len(th["scenes"]) * seg / 60:.1f}분 · {loop.stat().st_size / 1e6:.0f}MB · {time.time() - t0:.0f}초')
     log('[3/4] 합치기 (영상은 재인코딩 없이 반복)')
     total = minutes * 60; reps = math.ceil(total / (len(th['scenes']) * seg)) + 1
     lst = out / f'{name}_list.txt'; lst.write_text(''.join(f"file '{loop.resolve()}'\n" for _ in range(reps)))
     mp4 = out / f'{name}.mp4'
     subprocess.run(['ffmpeg', '-y', '-loglevel', 'error', '-f', 'concat', '-safe', '0', '-i', str(lst), '-i', str(wav), '-map', '0:v', '-map', '1:a',
-                    '-c:v', 'copy', '-af', f'volume={gain:.2f}dB,alimiter=limit=0.89:level=false', '-c:a', 'aac', '-b:a', '192k', '-ar', '48000',
+                    '-c:v', 'copy', '-af', f'volume={gain:.2f}dB,alimiter=limit=0.89:level=false', '-c:a', 'aac', '-b:a', '192k' if minutes <= 90 else '160k', '-ar', '48000',
                     '-t', str(total), '-movflags', '+faststart', str(mp4)], check=True)
     for x in (wav, loop, lst): x.unlink()
     log('[4/4] 썸네일 · 설명')

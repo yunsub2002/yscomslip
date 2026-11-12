@@ -14,8 +14,8 @@ on:
         description: '이번에 만들 편수'
         default: '1'
       minutes:
-        description: '영상 길이(분)'
-        default: '60'
+        description: '영상 길이(분) — auto = 2시간·3시간 번갈아'
+        default: 'auto'
 
 permissions:
   contents: write
@@ -43,5 +43,5 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           THEME: ${{ github.event.inputs.theme || 'auto' }}
           COUNT: ${{ github.event.inputs.count || '1' }}
-          MINUTES: ${{ github.event.inputs.minutes || '60' }}
+          MINUTES: ${{ github.event.inputs.minutes || 'auto' }}
         run: python sleep_bot/weekly.py

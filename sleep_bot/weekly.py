@@ -9,7 +9,7 @@ BOT = Path(__file__).resolve().parent; ROOT = BOT.parent; sys.path.insert(0, str
 import make_video as MV, themes as T  # noqa: E402
 
 REPO = os.environ.get('GITHUB_REPOSITORY', 'yunsub2002/yscomslip')
-COUNT = int(os.environ.get('COUNT') or 1); THEME = (os.environ.get('THEME') or 'auto').strip(); MINUTES = int(os.environ.get('MINUTES') or 60)
+COUNT = int(os.environ.get('COUNT') or 1); THEME = (os.environ.get('THEME') or 'auto').strip(); MINUTES = (os.environ.get('MINUTES') or 'auto').strip()
 
 
 def sh(*cmd, cwd=ROOT, check=True):
@@ -56,7 +56,9 @@ def main():
         vol = sum(1 for v in db if v['theme'] == th) + sum(1 for m in made if m['theme'] == th) + 1
         seed = int(stamp.strftime('%m%d%H%M')) * 10 + i
         print(f'\n===== [{i + 1}/{COUNT}] {T.THEMES[th]["name"]} Vol.{vol} (seed {seed}) =====', flush=True)
-        m = MV.make(th, seed, MINUTES, out, vol=vol, seg=float(os.environ.get('SEG') or 90), log=lambda s: print(s, flush=True)); m['vol'] = vol; made.append(m); last = th
+        mins = int(MINUTES) if MINUTES.isdigit() else (180 if (len(db) + i) % 2 == 0 else 120)   # auto: 3시간 → 2시간 번갈아
+        print(f'  길이 {mins // 60}시간' + (f' {mins % 60}분' if mins % 60 else ''), flush=True)
+        m = MV.make(th, seed, mins, out, vol=vol, seg=float(os.environ.get('SEG') or 90), log=lambda s: print(s, flush=True)); m['vol'] = vol; made.append(m); last = th
     files = [out / x for m in made for x in (m['file'], m['thumb'])]
     notes = '\n'.join(f"- {m['title']} ({m['size'] / 1e6:.0f}MB)" for m in made)
     sh('gh', 'release', 'create', tag, *files, '--repo', REPO, '--title', f'수면음악 {stamp:%Y-%m-%d}', '--notes', notes)

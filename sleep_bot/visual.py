@@ -250,11 +250,11 @@ def _dither():
 
 def render_segment(args):
     """장면 k (seg초) — 끝 xf초 동안 다음 장면으로 서서히 바뀜. 파일 하나로 인코딩"""
-    k, names, seed, seg, xf, out, crf = args
+    k, names, seed, seg, xf, out, crf, maxrate = args
     a = SCENES[names[k]](seed + k * 101); b = SCENES[names[(k + 1) % len(names)]](seed + ((k + 1) % len(names)) * 101)
     dt = _dither(); n = int(seg * FPS)
     ff = subprocess.Popen(['ffmpeg', '-y', '-loglevel', 'error', '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-s', f'{W}x{H}', '-r', str(FPS), '-i', '-',
-                           '-vf', 'scale=1920:1080:flags=lanczos', '-c:v', 'libx264', '-preset', 'medium', '-crf', str(crf), '-x264-params', 'aq-mode=3:keyint=96:min-keyint=96',
+                           '-vf', 'scale=1920:1080:flags=lanczos', '-c:v', 'libx264', '-preset', 'medium', '-crf', str(crf), '-x264-params', 'aq-mode=3:keyint=96:min-keyint=96', '-maxrate', maxrate, '-bufsize', '3000k',
                            '-pix_fmt', 'yuv420p', '-an', out], stdin=subprocess.PIPE)
     for i in range(n):
         t = i / FPS; f = a.frame(t)
@@ -264,11 +264,11 @@ def render_segment(args):
     ff.stdin.close(); ff.wait(); return out
 
 
-def make_loop(names, seed, path, seg=90.0, xf=6.0, crf=21, procs=None):
+def make_loop(names, seed, path, seg=90.0, xf=6.0, crf=21, procs=None, maxrate='1500k'):
     """장면들을 이어 붙인 끊김 없는 루프 영상 (len(names)*seg 초)"""
     from multiprocessing import Pool
     parts = [f'{path}.part{k}.mp4' for k in range(len(names))]
-    jobs = [(k, names, seed, seg, xf, parts[k], crf) for k in range(len(names))]
+    jobs = [(k, names, seed, seg, xf, parts[k], crf, maxrate) for k in range(len(names))]
     with Pool(procs or min(len(names), os.cpu_count() or 2)) as p: p.map(render_segment, jobs)
     lst = f'{path}.txt'; open(lst, 'w').write(''.join(f"file '{os.path.abspath(x)}'\n" for x in parts))
     subprocess.run(['ffmpeg', '-y', '-loglevel', 'error', '-f', 'concat', '-safe', '0', '-i', lst, '-c', 'copy', path], check=True)
