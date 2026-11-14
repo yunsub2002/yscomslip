@@ -11,6 +11,8 @@ import audio as A, visual as V, themes as T  # noqa: E402
 
 FONT = next((p for p in ['/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc', '/usr/share/fonts/opentype/noto/NotoSansCJK-Black.ttc', 'C:/Windows/Fonts/malgunbd.ttf'] if os.path.exists(p)), None)
 NOTE = ['도', '도#', '레', '미♭', '미', '파', '파#', '솔', '라♭', '라', '시♭', '시']
+INST_KO = {'musicbox': '오르골', 'piano': '피아노', 'harp': '하프', 'celesta': '첼레스타', 'kalimba': '칼림바', 'glass': '유리 종', 'vibes': '비브라폰', 'guitar': '나일론 기타',
+           'epiano': '일렉피아노', 'handpan': '핸드팬', 'bowl': '싱잉볼', 'flute': '플루트', 'hum': '허밍', 'choir': '합창', 'strings': '현악'}
 
 
 def thumbnail(th, seed, path, vol=None, minutes=60):
@@ -51,10 +53,18 @@ def dur_ko(minutes):
 
 def yt_text(th, vol, songs, minutes):
     title = f"{th['emoji']} {th['name']} {dur_ko(minutes).strip()} | {th['sub']}" + (f' Vol.{vol}' if vol and vol > 1 else '')
-    keys = []
-    for s in songs[:6]:
-        nm = NOTE[s['tonic'] % 12]; keys.append(f"{nm}장조 {s['meter']}/4박자 ♩={s['bpm']}")
-    music = f"🎼 이번 영상의 곡: 새로 작곡한 자장가 {len(songs)}곡 ({', '.join(keys[:3])} 등)\n" if songs else ''
+    keys = []; seen = set()
+    for s in songs:
+        nm = NOTE[s['tonic'] % 12]; sc = A.SCALE_KO.get(s.get('scale', 'major'), '장조'); ins = INST_KO.get(s.get('inst'), '')
+        if s.get('meter'): k = f"{ins} {nm} {sc} {s['meter']}/4박자 ♩={s['bpm']}".strip()
+        else: k = f"{ins} {nm} {sc} 앰비언트 (박자 없음)".strip()
+        if k.split(' ♩')[0] in seen: continue
+        seen.add(k.split(' ♩')[0]); keys.append(k)
+    insts = []
+    for s in songs:
+        ko = INST_KO.get(s.get('inst'))
+        if ko and ko not in insts: insts.append(ko)
+    music = (f"🎼 이번 영상의 곡: 새로 작곡한 곡 {len(songs)}곡 — {', '.join(keys[:3])} 등\n" + (f"🎻 악기: {' · '.join(insts[:6])}\n" if insts else '')) if songs else ''
     tags = th['tags']
     body = f"""{th['desc']}
 
