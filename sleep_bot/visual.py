@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """잔잔한 배경 영상 v2 — 외부 이미지·영상 0개, 전부 수학으로 그림.
-장면 14종:
+장면 21종:
   night 밤하늘 · rainwin 비 오는 창 · sea 달빛 바다 · firefly 반딧불 숲 · snow 눈 오는 밤 · aurora 오로라 · pastel 파스텔 구름 · warm 따뜻한 불빛
   eaves 처마에서 떨어지는 빗방울 · storm 번개 치는 비 오는 창 · nursery 아기 방(흔들의자·모빌) · stream 달빛 시냇물 · candle 촛불 · study 늦은 밤 서재(괘종시계)
 질감: 필름 그레인 · 블룸(빛 번짐) · 색 보정 · 천천히 움직이는 카메라 · 비네트
@@ -642,8 +642,281 @@ class Study(Scene):      # 늦은 밤 서재: 책장 실루엣, 스탠드 불빛
         return img * s.vig
 
 
+def _soft_band(xx_win, xc, w):
+    return np.clip(1 - np.abs(xx_win - xc) / w, 0, 1) ** .6
+
+
+class Bamboo(Scene):     # 달빛 대숲: 세 겹의 대나무가 바람에 휘청, 달빛 줄기, 안개, 떨어지는 댓잎
+    def setup(s):
+        R = s.R; s.bg = vgrad([(0, '#06120f'), (.5, '#0c211b'), (1, '#071410')]); s.yy, s.xx = np.mgrid[0:H, 0:W].astype(np.float32)
+        mx = W * R.uniform(.55, .75); blit(s.bg, mx, H * .12, sprite(140, 1.6), hexc('#a8d8c0'), .18); blit(s.bg, mx, H * .12, sprite(18, 4), hexc('#f2fff6'), .9)
+        s.stalks = []
+        for depth, n, col, wr in ((0, 26, '#173528', (5, 9)), (1, 16, '#0f2419', (9, 15)), (2, 9, '#07140d', (16, 26))):
+            for _ in range(n):
+                s.stalks.append((depth, float(R.uniform(-20, W + 20)), float(R.uniform(*wr)), hexc(col), float(R.uniform(.15, .35)) * (1 + depth * .4),
+                                 float(R.uniform(0, 6.3)), float(R.uniform(55, 95)) * (1 + depth * .5), float(R.uniform(0, 1))))
+        s.ycol = np.arange(H, dtype=np.float32)[:, None]; s.bend = ((1 - s.ycol / H) ** 2.2)
+        s.leaves = [(R.uniform(0, W), R.uniform(0, H), R.uniform(14, 30), R.uniform(.3, .8), R.uniform(0, 6.3)) for _ in range(10)]
+        s.mist = tile_noise(H // 2, W * 2, 50, int(R.integers(1e6)), 3); s.mist_t = np.sin(np.linspace(0, np.pi, H // 2))[:, None] ** 1.5
+        s.rays = [(float(R.uniform(W * .2, W * .9)), float(R.uniform(30, 70)), float(R.uniform(0, 6.3))) for _ in range(4)]
+        s.ff = [(R.uniform(0, W), R.uniform(H * .5, H * .95), R.uniform(10, 30), R.uniform(0, 6.3), R.uniform(.1, .3)) for _ in range(8)]
+    def frame(s, t):
+        img = s.bg.copy(); y, x = s.yy, s.xx
+        for rx, rw, p in s.rays:                                        # 달빛 줄기 (비스듬히, 천천히 숨쉬듯)
+            d = np.abs((x - rx) + (y - 0) * .45) / rw; img += (np.exp(-d * d) * (1 - y / H) * .05 * (.7 + .3 * math.sin(t * .3 + p)))[..., None] * hexc('#bfe8d0')
+        gust = .6 + .4 * math.sin(2 * math.pi * t / 23 + 1.3) ** 2
+        order = sorted(s.stalks, key=lambda q: q[0]); misted = False
+        for depth, x0, w, col, amp, ph, node, lit in order:
+            if depth >= 1 and not misted:                                # 먼 대나무와 가까운 대나무 사이에 안개 한 겹
+                misted = True; off = int((t * 5) % (W * 2)); m = np.roll(s.mist, -off, axis=1)[:, :W]
+                img[H // 2:] += (np.clip((m - .45) * 1.2, 0, 1) * .05 * s.mist_t)[..., None] * hexc('#9fc8b0')
+            sway = amp * 60 * gust * math.sin(t * (.35 + .1 * depth) + ph) + 10 * math.sin(t * 1.3 + ph * 2) * amp
+            xc = x0 + sway * s.bend                                     # (H,1) 각 행의 줄기 중심
+            xa = int(max(0, x0 - w - abs(sway) - 4)); xb = int(min(W, x0 + w + abs(sway) + 4))
+            if xb <= xa: continue
+            xw = s.xx[:, xa:xb]; band = _soft_band(xw, xc, w)
+            nodes = 1 - .55 * np.exp(-((s.ycol + ph * 40) % node - node / 2) ** 2 / 3) ; rim = np.clip((xw - xc) / w, 0, 1) ** 3 * (.25 + .5 * lit)
+            colr = col[None, None, :] * nodes[..., None] * (1 + .5 * (1 - s.ycol / H))[..., None] + rim[..., None] * hexc('#6fa088') * .35 * (1 - depth * .3)
+            reg = img[:, xa:xb]; reg[:] = reg * (1 - band[..., None]) + colr * band[..., None]
+        for x0, y0, sz, v, p in s.leaves:                                # 떨어지는 댓잎
+            yy = (y0 + v * 40 * t) % (H + 40) - 20; xx = (x0 + 30 * math.sin(t * .8 + p) + 15 * t) % W
+            blit(img, xx, yy, sprite(3, 2), hexc('#5f8a6a'), .5)
+        for x0, y0, a, p, w in s.ff:
+            b = max(0, math.sin(t * w * 2 + p)) ** 2; blit(img, x0 + a * math.sin(t * .2 + p), y0 + a * .5 * math.cos(t * .17 + p), sprite(2.4, 2), hexc('#e8ffc0'), .8 * b)
+        img[:90] *= np.linspace(.35, 1, 90)[:, None, None]               # 위쪽은 댓잎이 우거져 어둡게
+        return img * s.vig
+
+
+class Pond(Scene):       # 비 오는 연못: 수면 가득 빗방울 파문, 연잎·연꽃, 갈대, 물에 비친 등불
+    def setup(s):
+        R = s.R; s.yy, s.xx = np.mgrid[0:H, 0:W].astype(np.float32); s.hz = int(H * .42)
+        s.bg = vgrad([(0, '#0b1424'), (.42, '#1d2c44'), (.421, '#101c2c'), (1, '#070e18')])
+        for b, a, c in [(.36, .03, '#0e1a26'), (.41, .015, '#0a131c')]: fill_below(s.bg[:s.hz + 2], ridge(int(R.integers(1e6)), b, a, 5)[:], hexc(c), 3) if False else None
+        sil = s.bg.copy(); fill_below(sil, ridge(int(R.integers(1e6)), .37, .025, 5), hexc('#0b1520'), 3); s.bg[:s.hz] = sil[:s.hz]
+        s.lamps = [(float(R.uniform(W * .1, W * .9)), float(s.hz - R.uniform(10, 40)), hexc(R.choice(['#ffb36b', '#ffd59a', '#ff9a5a']))) for _ in range(3)]
+        for lx, ly, c in s.lamps: blit(s.bg, lx, ly, sprite(26, 1.8), c, .35); blit(s.bg, lx, ly, sprite(3.5, 4), hexc('#fff0c8'), .95)
+        s.wtex = tile_noise(H - s.hz, W * 2, 26, int(R.integers(1e6)), 3)
+        s.pads = []
+        for _ in range(14):
+            d = R.uniform(.15, 1.0); cx = R.uniform(0, W); cy = s.hz + (H - s.hz) * d; rx = 28 + 70 * d; s.pads.append((cx, cy, rx, rx * (.22 + .1 * d), R.uniform(0, 6.3)))
+        s.pad_m = np.zeros((H, W), np.float32); s.pad_hi = np.zeros((H, W), np.float32)
+        for cx, cy, rx, ry, p in s.pads:
+            m = ellipse_mask(cx, cy, rx, ry, 1.0); notch = poly_mask([(cx, cy), (cx + rx * 1.2 * math.cos(p), cy + ry * 1.2 * math.sin(p)), (cx + rx * 1.2 * math.cos(p + .35), cy + ry * 1.2 * math.sin(p + .35))])
+            m = np.clip(m - notch, 0, 1); s.pad_m = np.maximum(s.pad_m, m); s.pad_hi += m * np.clip(1 - (s.yy - (cy - ry)) / (2 * ry + 1), 0, 1)
+        s.lotus = [(s.pads[i][0] + s.pads[i][2] * .2, s.pads[i][1] - s.pads[i][3] * .9, 9 + s.pads[i][2] * .16) for i in R.choice(len(s.pads), 3, replace=False)]
+        s.reed = shapes_mask(lambda d: [d.line([(x0, H), (x0 + R.uniform(-30, 30), H - R.uniform(120, 300))], fill=255, width=int(R.uniform(2, 5))) for x0 in list(R.uniform(0, W * .15, 18)) + list(R.uniform(W * .85, W, 18))], .8)
+        s.rip = [(float(R.uniform(0, W)), float(s.hz + (H - s.hz) * R.uniform(.02, 1) ** .8), float(R.uniform(.9, 2.2)), float(R.uniform(0, 3))) for _ in range(70)]
+        s.drops = [(R.uniform(0, W), R.uniform(0, H), R.uniform(380, 560), R.uniform(.03, .06), R.uniform(8, 16)) for _ in range(110)]; s.streak = {}
+    def frame(s, t):
+        img = s.bg.copy(); hz = s.hz; n = H - hz
+        off = int((t * 8) % (W * 2)); tx = np.roll(s.wtex, -off // 2, axis=1)[:, :W]
+        src = img[max(0, hz - n):hz][::-1]; src = np.vstack([src, np.repeat(src[-1:], n - src.shape[0], 0)]) if src.shape[0] < n else src
+        wob = (np.sin(s.yy[hz:] * .5 + t * 1.3 + tx * 9) * 2).astype(np.int32); cols = np.clip(s.xx[hz:].astype(np.int32) + wob, 0, W - 1)
+        refl = src[np.arange(n)[:, None], cols]
+        img[hz:] = refl * .5 + hexc('#0c1828') * .5 + (tx * .04)[..., None]
+        for lx, ly, c in s.lamps:                                              # 물에 비친 등불: 세로로 길게 일렁임
+            ry = 2 * hz - ly; band = np.exp(-((s.xx[hz:] - lx - wob * 2) / 7) ** 2) * np.exp(-((s.yy[hz:] - ry) / 90) ** 2) * (.6 + .4 * np.sin(s.yy[hz:] * .8 + t * 2))
+            img[hz:] += (band * .35)[..., None] * c
+        for x0, y0, per, ph in s.rip:                                         # 빗방울 파문
+            age = ((t + ph) % per) / per; d = (y0 - hz) / n; rx = (2 + 26 * age) * (.4 + d); ry = rx * (.18 + .2 * d); a = (1 - age) ** 2 * .45
+            xa, xb, ya, yb = max(0, int(x0 - rx - 2)), min(W, int(x0 + rx + 3)), max(hz, int(y0 - ry - 2)), min(H, int(y0 + ry + 3))
+            if xb > xa and yb > ya:
+                q = np.sqrt(((s.xx[ya:yb, xa:xb] - x0) / max(rx, .5)) ** 2 + ((s.yy[ya:yb, xa:xb] - y0) / max(ry, .5)) ** 2)
+                img[ya:yb, xa:xb] += (np.exp(-((q - 1) * max(rx, 1) / 1.6) ** 2) * a)[..., None] * hexc('#a8c0e0')
+        pm = s.pad_m[..., None]; img[:] = img * (1 - pm) + (hexc('#0f2a1c') + s.pad_hi[..., None] * hexc('#2f5a3a') * .5) * pm
+        for lx, ly, r in s.lotus:                                             # 연꽃: 은은히 빛나는 분홍
+            blit(img, lx, ly, sprite(r * 3, 1.6), hexc('#ff8fb0'), .1)
+            for k in range(7):
+                a = -math.pi / 2 + (k - 3) * .38; L = r * (.9 - .1 * abs(k - 3))
+                for q in range(4): blit(img, lx + L * (q / 3) * math.cos(a), ly + L * (q / 3) * math.sin(a) * .8, sprite(r * (.32 - .05 * q), 2.5), hexc('#e889a8') * (.6 + .15 * q), .55)
+            blit(img, lx, ly + 1, sprite(r * .35, 3), hexc('#ffe9a0'), .7)
+        for x, y, v, a, L in s.drops:
+            yy = (y + v * t) % (H + 60) - 30; xx = (x - .06 * v * t) % W; k = int(L)
+            if k not in s.streak:
+                yy_, xx_ = np.mgrid[-k:k + 1, -1:2].astype(np.float32); s.streak[k] = np.exp(-(xx_ ** 2) / 1.0) * np.clip(1 - np.abs(yy_) / k, 0, 1)
+            sp = s.streak[k]; y0, x0 = int(yy) - k, int(xx) - 1
+            if 0 <= y0 and y0 + sp.shape[0] <= H and 0 <= x0 and x0 + 3 <= W: img[y0:y0 + sp.shape[0], x0:x0 + 3] += sp[..., None] * (hexc('#c4d4f4') * a)
+        rm = s.reed[..., None]; img[:] = img * (1 - rm) + hexc('#050a08') * rm
+        return img * s.vig
+
+
+class Camp(Scene):       # 별빛 캠핑: 불 켜진 텐트, 타닥이는 모닥불과 올라가는 불티, 나무 실루엣, 별
+    def setup(s):
+        R = s.R; s.yy, s.xx = np.mgrid[0:H, 0:W].astype(np.float32)
+        s.bg = vgrad([(0, '#050816'), (.55, '#111a34'), (.7, '#1a2240'), (1, '#1a2240')]); s.stars = Stars(R, 230, .55)
+        rg = ridge(int(R.integers(1e6)), .66, .03, 4); gm = np.zeros((H, W, 3), np.float32); fill_below(gm, rg, np.ones(3, np.float32), 3); s.ground = gm[..., 0]
+        fill_below(s.bg, rg, hexc('#0a0d0c'), 3)
+        def trees(d):
+            for x0 in list(R.uniform(-40, W * .22, 5)) + list(R.uniform(W * .8, W + 40, 5)):
+                h = R.uniform(250, 420); b = H * .72; w = h * .32
+                for k in range(5): d.polygon([(x0, b - h + k * h * .17), (x0 - w * (k + 1) / 5, b - h + (k + 1.4) * h * .17), (x0 + w * (k + 1) / 5, b - h + (k + 1.4) * h * .17)], fill=255)
+        s.tree = shapes_mask(trees, 1.2)
+        s.fx, s.fy = W * .55, H * .80; s.tx, s.ty = W * .34, H * .73
+        s.tent = poly_mask(chaikin([(s.tx - 130, s.ty + 40), (s.tx, s.ty - 120), (s.tx + 130, s.ty + 40)], 1), 1.0)
+        s.door = poly_mask([(s.tx - 30, s.ty + 40), (s.tx, s.ty - 40), (s.tx + 30, s.ty + 40)], 1.5)
+        s.logs = shapes_mask(lambda d: [d.line([(s.fx - 50, s.fy + 18), (s.fx + 50, s.fy + 6)], fill=255, width=12), d.line([(s.fx - 46, s.fy + 6), (s.fx + 48, s.fy + 20)], fill=255, width=12)], 1.0)
+        s.fn = gaussian_filter(np.random.default_rng(int(R.integers(1e6))).standard_normal(6000).astype(np.float32), 2.5); s.fn /= np.abs(s.fn).max()
+        s.sparks = [(R.uniform(0, 6), R.uniform(30, 70), R.uniform(-20, 20), R.uniform(0, 6.3)) for _ in range(26)]
+    def frame(s, t):
+        img = s.bg.copy(); s.stars.draw(img, t, .9); y, x = s.yy, s.xx
+        k = int(t * 30) % len(s.fn); fl = 1 + .25 * s.fn[k]; fl2 = s.fn[(k + 900) % len(s.fn)]
+        d = np.sqrt((x - s.fx) ** 2 + ((y - s.fy) * 1.6) ** 2)
+        img += (np.exp(-(d / 380) ** 2) * .28 * fl * s.ground)[..., None] * hexc('#ff8a3a')
+        tm = s.tree[..., None]; img[:] = img * (1 - tm) + hexc('#040806') * tm
+        tc = hexc('#d48a40') * (.55 + .2 * fl) * (1 - .4 * np.clip((s.ty + 40 - y) / 160, 0, 1))[..., None]
+        img[:] = img * (1 - s.tent[..., None]) + tc * s.tent[..., None]
+        img[:] = img * (1 - s.door[..., None] * .8) + hexc('#ffcf80') * (.75 * fl) * s.door[..., None] * .8
+        img += (np.exp(-((x - s.tx) / 160) ** 2 - ((y - s.ty) / 120) ** 2) * .12)[..., None] * hexc('#ffb060')
+        lm = s.logs[..., None]; img[:] = img * (1 - lm) + hexc('#2a160c') * lm
+        for yy, rr, col, a in ((0, 26, '#ff7a20', .35), (-14, 16, '#ffb040', .8), (-30, 11, '#ffd070', .85), (-46, 7, '#ffe8a0', .7), (-60, 4, '#ff9030', .5)):
+            for j in (-1, 0, 1):
+                w = math.sin(t * 7 + j * 2 + yy) * 4; blit(img, s.fx + j * 12 + fl2 * 8 * (-yy / 60) + w * (-yy / 60), s.fy + yy * fl, sprite(rr * (1 - .25 * abs(j)), 2.2), hexc(col), a * (1 - .3 * abs(j)))
+        for ph, v, dx, p in s.sparks:                                        # 불티: 올라가며 흔들리고 사라짐
+            life = ((t * .45 + ph) % 3.0) / 3.0; yy = s.fy - 30 - life * v * 6; xx = s.fx + dx + 18 * math.sin(life * 6 + p)
+            blit(img, xx, yy, sprite(1.4, 2), hexc('#ffc060'), (1 - life) ** 1.5 * .9)
+        return img * s.vig
+
+
+class Underwater(Scene): # 깊은 바닷속: 수면에서 내려오는 빛줄기, 일렁이는 물결 빛, 기포, 해파리, 떠다니는 입자
+    def setup(s):
+        R = s.R; s.yy, s.xx = np.mgrid[0:H, 0:W].astype(np.float32)
+        s.bg = vgrad([(0, '#0d4a6a'), (.25, '#0a3352'), (.65, '#06203a'), (1, '#030c1c')])
+        s.caus = tile_noise(H // 3, W * 2, 14, int(R.integers(1e6)), 2); s.caus2 = tile_noise(H // 3, W * 2, 22, int(R.integers(1e6)), 2)
+        s.rays = [(float(R.uniform(0, W)), float(R.uniform(25, 70)), float(R.uniform(0, 6.3)), float(R.uniform(.05, .15))) for _ in range(7)]
+        s.bub = [(R.uniform(0, W), R.uniform(0, H), R.uniform(1.5, 4.5), R.uniform(25, 60), R.uniform(0, 6.3)) for _ in range(45)]
+        s.snow = [(R.uniform(0, W), R.uniform(0, H), R.uniform(.6, 1.4), R.uniform(3, 9), R.uniform(0, 6.3)) for _ in range(140)]
+        s.jelly = [(R.uniform(W * .1, W * .9), R.uniform(H * .3, H * .85), R.uniform(16, 34), R.uniform(0, 6.3), hexc(R.choice(['#9fd8ff', '#d0a8ff', '#ffb8e0']))) for _ in range(4)]
+        fill_below(s.bg, ridge(int(R.integers(1e6)), .92, .03, 5), hexc('#020812'), 6)
+    def frame(s, t):
+        img = s.bg.copy(); y, x = s.yy, s.xx
+        for rx, rw, p, sp in s.rays:                                        # 빛줄기: 위에서 아래로 퍼지며 천천히 좌우로
+            cx = rx + 60 * math.sin(t * sp + p); d = (x - cx - (y * .25)) / (rw * (1 + y / H * 1.5))
+            img += (np.exp(-d * d) * (1 - y / H) ** 1.6 * .14 * (.7 + .3 * math.sin(t * .5 + p)))[..., None] * hexc('#a8e8ff')
+        o1 = int((t * 20) % (W * 2)); o2 = int((t * 13) % (W * 2))
+        c = np.roll(s.caus, -o1, axis=1)[:, :W] * np.roll(s.caus2, o2, axis=1)[:, :W]
+        img[:H // 3] += (np.clip((c - .25) * 3, 0, 1) ** 2 * .18 * np.linspace(1, 0, H // 3)[:, None])[..., None] * hexc('#c8f4ff')
+        for x0, y0, r, v, p in s.snow:
+            yy = (y0 + v * t) % H; xx = (x0 + 10 * math.sin(t * .2 + p)) % W; blit(img, xx, yy, sprite(r, 2), hexc('#a0c8e0'), .25)
+        for x0, y0, size, ph, col in s.jelly:                                # 해파리: 몸을 오므렸다 펴며 천천히 위로
+            pulse = .5 + .5 * math.sin(t * 1.1 + ph); yy = (y0 - 6 * t + 20 * pulse) % (H + 120) - 60; xx = x0 + 25 * math.sin(t * .1 + ph)
+            w = size * (1 + .15 * pulse); hgt = size * (.8 - .15 * pulse)
+            blit(img, xx, yy, sprite(w * 2.6, 1.5), col, .1)
+            for k in range(6):
+                a = math.pi * (k / 5); blit(img, xx + w * .8 * math.cos(a) * .9, yy - hgt * .5 * math.sin(a), sprite(w * .45, 2), col, .3)
+            for j in range(5):
+                tx = xx + (j - 2) * w * .3
+                for q in range(10): blit(img, tx + 6 * math.sin(t * 1.3 + q * .5 + j + ph), yy + q * size * .28, sprite(1.4, 2), col, .35 * (1 - q / 10))
+        for x0, y0, r, v, p in s.bub:
+            yy = (y0 - v * t) % (H + 20) - 10; xx = x0 + 6 * math.sin(t * 2 + p + yy * .02)
+            blit(img, xx, yy, sprite(r, 4), hexc('#bfeaff'), .22); blit(img, xx - r * .35, yy - r * .35, sprite(r * .3, 3), hexc('#ffffff'), .6)
+        return img * s.vig
+
+
+class Meadow(Scene):     # 별 쏟아지는 초원: 은하수, 가끔 별똥별, 바람에 물결치는 풀, 먼 산
+    def setup(s):
+        R = s.R; s.yy, s.xx = np.mgrid[0:H, 0:W].astype(np.float32)
+        s.bg = vgrad([(0, '#03050f'), (.5, '#0a1430'), (.72, '#1a2650'), (1, '#0a0f1c')])
+        mw = tile_noise(H, W, 18, int(R.integers(1e6)), 4); band = np.exp(-((s.yy - (H * .9 - s.xx * .55)) / 110) ** 2)   # 은하수
+        s.bg += (band * np.clip((mw - .35) * 1.6, 0, 1) * .22)[..., None] * hexc('#c8c0ff'); s.bg += (band * .05)[..., None] * hexc('#ffd8c0')
+        s.stars = Stars(R, 420, .78, (.4, 1.4))
+        fill_below(s.bg, ridge(int(R.integers(1e6)), .74, .03, 4), hexc('#0e1530'), 3)
+        s.g0 = int(H * .58); gh = H - s.g0
+        def grass(d):
+            for _ in range(1400):
+                x0 = R.uniform(-10, W + 10); h = R.uniform(40, 200) * (.5 + R.uniform(0, 1)) ** 1.2; lean = R.uniform(-14, 14)
+                d.line([(x0, gh + 2), (x0 + lean, gh - h)], fill=int(R.uniform(150, 255)), width=int(R.uniform(1, 3)))
+        from PIL import Image, ImageDraw
+        im = Image.new('L', (W, gh), 0); grass(ImageDraw.Draw(im)); s.grass = gaussian_filter(np.asarray(im, np.float32) / 255, .6)
+        s.grass[-int(gh * .25):] = np.maximum(s.grass[-int(gh * .25):], 1.0)
+        s.hf = ((gh - np.arange(gh, dtype=np.float32)) / gh)[:, None]                 # 위로 갈수록 많이 흔들림
+        s.shoot = [(float(R.uniform(5, 85)), float(R.uniform(W * .2, W * .9)), float(R.uniform(40, H * .3)), float(R.uniform(.6, 1.2))) for _ in range(4)]
+        s.ff = [(R.uniform(0, W), R.uniform(H * .62, H * .9), R.uniform(10, 30), R.uniform(0, 6.3), R.uniform(.1, .3)) for _ in range(10)]
+    def frame(s, t):
+        img = s.bg.copy(); s.stars.draw(img, t)
+        for t0, sx, sy, dur in s.shoot:                                     # 별똥별
+            u = (t - t0) / dur
+            if 0 <= u <= 1:
+                for k in range(18): blit(img, sx - (u * 300 - k * 7), sy + (u * 150 - k * 3.5), sprite(1.2, 2), hexc('#ffffff'), (1 - k / 18) * math.sin(math.pi * u) * .9)
+        g0 = s.g0; gh = H - g0
+        sh = (s.hf ** 1.5 * (14 * math.sin(t * .9) + 8 * np.sin(s.xx[g0:] * .012 - t * 1.6))).astype(np.int32)
+        cols = np.clip(s.xx[g0:].astype(np.int32) - sh, 0, W - 1); gm = s.grass[np.arange(gh)[:, None], cols][..., None]
+        gc = hexc('#03050a') + hexc('#4a5a8a') * (s.hf ** 4)[..., None] * .22
+        img[g0:] = img[g0:] * (1 - gm) + gc * gm
+        for x0, y0, a, p, w in s.ff:
+            b = max(0, math.sin(t * w * 2 + p)) ** 2; blit(img, x0 + a * math.sin(t * .2 + p), y0 + a * .4 * math.cos(t * .15 + p), sprite(2.2, 2), hexc('#e8ffc0'), .7 * b)
+        return img * s.vig
+
+
+class SnowWin(Scene):    # 눈 오는 창가 (실내): 김 서린 창 너머 눈 오는 마을, 창틀, 커튼, 창가의 머그잔에서 김
+    def setup(s):
+        R = s.R; s.yy, s.xx = np.mgrid[0:H, 0:W].astype(np.float32)
+        s.bg = vgrad([(0, '#1a1210'), (1, '#120c0a')])
+        s.wx0, s.wy0, s.ww, s.wh = int(W * .2), int(H * .08), int(W * .6), int(H * .66)
+        out = vgrad([(0, '#0e1838'), (.7, '#2a3a66'), (1, '#c8d4ee')], s.wh, s.ww)
+        for k in range(14):                                                 # 먼 마을 지붕과 창불
+            hx = R.uniform(0, s.ww); hy = s.wh * R.uniform(.62, .8); hw = R.uniform(40, 90)
+            ys, xs = np.mgrid[0:s.wh, 0:s.ww]; roof = ((ys > hy - (hw * .5 - np.abs(xs - hx)) * .6) & (np.abs(xs - hx) < hw * .5) & (ys < hy + 60)).astype(np.float32)
+            out = out * (1 - roof[..., None]) + hexc('#141c30') * roof[..., None]
+            blit_small(out, hx + R.uniform(-hw * .2, hw * .2), hy + 25, 5, hexc('#ffb860'), .9)
+        out[int(s.wh * .86):] = hexc('#d8e0f4')
+        s.out = out; s.fl = [(R.uniform(0, s.ww), R.uniform(0, s.wh), d, R.uniform(.6, 1.5) * d, R.uniform(12, 28) * d, R.uniform(.2, .6), R.uniform(0, 6.3)) for d in (.6, 1.0, 1.6) for _ in range({.6: 160, 1.0: 90, 1.6: 30}[d])]
+        fr = np.zeros((H, W), np.float32); x0, y0, w, h = s.wx0, s.wy0, s.ww, s.wh
+        fr[y0 - 16:y0 + h + 16, x0 - 16:x0 + w + 16] = 1; fr[y0:y0 + h, x0:x0 + w] = 0; fr[y0:y0 + h, x0 + w // 2 - 7:x0 + w // 2 + 7] = 1; fr[y0 + h // 2 - 6:y0 + h // 2 + 6, x0:x0 + w] = 1
+        s.frame_m = gaussian_filter(fr, .8)
+        yy, xx = np.mgrid[0:h, 0:w].astype(np.float32); dd = np.minimum(np.minimum(xx, w - xx), np.minimum(yy, h - yy)) / 60
+        s.frost = (np.clip(1 - dd, 0, 1) ** 2 * (.6 + .4 * tile_noise(h, w, 6, int(R.integers(1e6)), 3)))[..., None]
+        s.sill = int(y0 + h + 16); s.mx, s.my = W * .66, s.sill - 2
+        s.mug = shapes_mask(lambda d: (d.rounded_rectangle([s.mx - 26, s.my - 52, s.mx + 26, s.my], 6, fill=255), d.ellipse([s.mx + 18, s.my - 42, s.mx + 42, s.my - 16], outline=255, width=6)), 1.0)
+        s.steam = tile_noise(200, 120, 10, int(R.integers(1e6)), 3)
+        s.cur = np.exp(-((s.xx - (x0 - 60)) / 50) ** 2) + np.exp(-((s.xx - (x0 + w + 60)) / 50) ** 2)
+    def frame(s, t):
+        img = s.bg.copy(); y, x = s.yy, s.xx
+        img += (np.exp(-((x - W * .05) / 500) ** 2 - ((y - H * .5) / 400) ** 2) * .35)[..., None] * hexc('#ffaa60')    # 방 안 스탠드 불빛
+        w = s.out.copy()
+        for x0, y0, d, r, v, ww, p in s.fl:
+            yy = (y0 + v * t) % (s.wh + 20) - 10; xx = (x0 + 14 * d * math.sin(t * ww + p) + 5 * d * t) % s.ww
+            blit_small(w, xx, yy, r * 1.2, hexc('#ffffff'), .5 if d > .7 else .3)
+        w = w * (1 - s.frost * .55) + hexc('#dfe6f4') * s.frost * .45
+        img[s.wy0:s.wy0 + s.wh, s.wx0:s.wx0 + s.ww] = w
+        fm = s.frame_m[..., None]; img[:] = img * (1 - fm) + (hexc('#3a2618') + np.exp(-((x - W * .05) / 600) ** 2)[..., None] * hexc('#3a2210') * .5) * fm
+        sm = np.clip((y - s.sill) / 2, 0, 1)[..., None]; img[:] = img * (1 - sm) + hexc('#2a1a10') * sm
+        cm = (s.cur * (y < s.sill + 200))[..., None]; img[:] = img * (1 - cm * .85) + hexc('#5a2a28') * cm * .85
+        mm = s.mug[..., None]; img[:] = img * (1 - mm) + hexc('#e8d8c8') * (.6 + .2 * np.exp(-((x - W * .05) / 700) ** 2))[..., None] * mm
+        st = np.roll(s.steam, int(t * 20) % 200, axis=0); sx, sy = int(s.mx - 60), int(s.my - 52 - 200)   # 김: 위로 피어오르며 흩어짐
+        env = (np.linspace(0, 1, 200)[:, None] ** 1.5) * np.exp(-((np.arange(120)[None, :] - 60 - 15 * np.sin(np.linspace(0, 6, 200)[:, None] + t * .6)) / 22) ** 2)
+        reg = img[sy:sy + 200, sx:sx + 120]; reg += (np.clip((st - .45) * 2, 0, 1) * env * .18)[..., None] * hexc('#ffffff')
+        return img * s.vig
+
+
+class TentRain(Scene):   # 텐트 안에서 듣는 빗소리: 랜턴 불빛, 천 위로 떨어지는 빗방울 그림자, 흘러내리는 물줄기
+    def setup(s):
+        R = s.R; s.yy, s.xx = np.mgrid[0:H, 0:W].astype(np.float32)
+        s.lx, s.ly = W * .5, H * .26
+        tex = tile_noise(H, W, 3, int(R.integers(1e6)), 2) * .05 + tile_noise(H, W, 40, int(R.integers(1e6)), 2) * .08
+        d = np.sqrt((s.xx - s.lx) ** 2 + (s.yy - s.ly) ** 2); light = np.exp(-(d / 520) ** 2) * .9 + .1
+        seam = np.exp(-(np.abs(s.yy - (H * .05 + np.abs(s.xx - W / 2) * .9)) / 3)) + np.exp(-np.abs(s.xx - W / 2) / 2.5) * (s.yy < H * .6)
+        s.base = (hexc('#c87a3a') * (light * (1 - seam * .4) + tex)[..., None] * .55)
+        s.floor = int(H * .80); s.bag = shapes_mask(lambda dr: dr.rounded_rectangle([W * .18, s.floor - 30, W * .82, H + 40], 60, fill=255), 4)
+        s.spots = [(float(R.uniform(0, W)), float(R.uniform(0, s.floor)), float(R.uniform(.6, 2.2)), float(R.uniform(0, 3)), float(R.uniform(4, 9))) for _ in range(90)]
+        s.rills = [(float(R.uniform(W * .05, W * .95)), float(R.uniform(3, 7)), float(R.uniform(0, 6))) for _ in range(6)]
+    def frame(s, t):
+        img = s.base.copy(); fl = 1 + .03 * math.sin(t * 2.1) + .02 * math.sin(t * 5.7)
+        img *= fl
+        for x0, y0, per, ph, r in s.spots:                                   # 빗방울이 천에 닿는 순간 생기는 작은 그림자
+            age = ((t + ph) % per) / per
+            if age < .35: blit(img, x0, y0, sprite(r * 1.6 * (1 + age), 2), hexc('#3a1a08'), -.6 * (1 - age / .35))
+        for x0, per, ph in s.rills:                                           # 천을 따라 흘러내리는 물줄기 그림자
+            u = ((t + ph) % per) / per; yb = u * s.floor
+            for k in range(14): blit(img, x0 + 4 * math.sin(k * .7 + ph), yb - k * 9, sprite(2.2, 2), hexc('#000000'), -.12 * (1 - k / 14))
+        blit(img, s.lx, s.ly, sprite(70, 1.6), hexc('#ffd080'), .35 * fl); blit(img, s.lx, s.ly, sprite(10, 4), hexc('#fff4d0'), .95)
+        vline_soft(img, s.lx, 0, s.ly - 12, hexc('#2a1a0e'), .8)
+        bm = s.bag[..., None]; img[:] = img * (1 - bm) + hexc('#3a4a6a') * (.5 + .3 * np.exp(-((s.xx - s.lx) / 500) ** 2))[..., None] * bm
+        return img * s.vig
+
+
 SCENES = {'night': Night, 'rainwin': RainWin, 'sea': Sea, 'firefly': Firefly, 'snow': Snow, 'aurora': Aurora, 'pastel': Pastel, 'warm': Warm,
-          'eaves': Eaves, 'storm': Storm, 'nursery': Nursery, 'stream': Stream, 'candle': Candle, 'study': Study}
+          'eaves': Eaves, 'storm': Storm, 'nursery': Nursery, 'stream': Stream, 'candle': Candle, 'study': Study,
+          'bamboo': Bamboo, 'pond': Pond, 'camp': Camp, 'underwater': Underwater, 'meadow': Meadow, 'snowwin': SnowWin, 'tentrain': TentRain}
 
 
 # ----------------------------------------------------------------------------- 후처리 · 인코딩
@@ -667,28 +940,83 @@ def camera(f, u):
     return f[dy:dy + CH, dx:dx + CW]
 
 
+# ----------------------------------------------------------------------------- 화면 전환 (6가지)
+# 모두 u=0 에서 앞 장면 그대로, u=1 에서 다음 장면 그대로 끝나므로 이음새가 보이지 않습니다.
+TRANS_KO = {'dissolve': '부드럽게 겹치기', 'dark': '어둠 속으로 잠겼다 떠오르기', 'zoom': '천천히 다가가며 바뀌기', 'sweep': '빛이 쓸고 지나가며 바뀌기',
+            'blur': '흐려졌다 맑아지기', 'iris': '가운데서 둥글게 열리기'}
+TRANS = list(TRANS_KO)
+_YX = None
+
+
+def _yx():
+    global _YX
+    if _YX is None:
+        y, x = np.mgrid[0:H, 0:W].astype(np.float32); _YX = (y / H, x / W)
+    return _YX
+
+
+def _zoomed(f, z):
+    """가운데 기준 z배 확대 (z>=1, 양선형 보간 — PIL 로 빠르게)"""
+    if z <= 1.001: return f
+    from PIL import Image
+    h, w = H / z, W / z; box = ((W - w) / 2, (H - h) / 2, (W + w) / 2, (H + h) / 2)
+    return np.stack([np.asarray(Image.fromarray(np.ascontiguousarray(f[..., c])).resize((W, H), Image.BILINEAR, box=box), np.float32) for c in range(3)], -1)
+
+
+def transition(kind, fa, fb, u):
+    """fa: 앞 장면, fb: 다음 장면, u: 0→1 (이미 부드럽게 보간된 값)"""
+    if kind == 'dark':                                                    # 어두워졌다가 다음 장면이 떠오름
+        d = math.sin(math.pi * u) ** 1.2; return (fa * (1 - u) + fb * u) * (1 - .85 * d)
+    if kind == 'zoom':                                                    # 앞 장면에 천천히 다가가며 녹아듦
+        return _zoomed(fa, 1 + .07 * u) * (1 - u) + _zoomed(fb, 1 + .04 * (1 - u)) * u
+    if kind == 'sweep':                                                   # 비스듬한 부드러운 빛 띠가 지나가며 바뀜
+        y, x = _yx(); pos = (x * .8 + y * .35) / 1.15; edge = .28
+        m = np.clip((u * (1 + edge) - pos) / edge, 0, 1); m = m * m * (3 - 2 * m)
+        glow = np.exp(-((pos - (u * (1 + edge) - edge / 2)) / .08) ** 2) * math.sin(math.pi * u) * .12
+        return fa * (1 - m[..., None]) + fb * m[..., None] + glow[..., None] * np.array([1, .95, .85], np.float32)
+    if kind == 'blur':                                                    # 둘 다 흐려졌다가 다음 장면이 맑아짐
+        sg = 7 * math.sin(math.pi * u)
+        f = fa * (1 - u) + fb * u
+        if sg > .3:
+            sm = gaussian_filter(f[::2, ::2], (sg / 2, sg / 2, 0)); f = np.repeat(np.repeat(sm, 2, 0), 2, 1)[:H, :W]
+        return f
+    if kind == 'iris':                                                    # 가운데부터 둥글게 다음 장면이 열림
+        y, x = _yx(); r = np.sqrt(((x - .5) * 1.78) ** 2 + (y - .5) ** 2) / 1.02; edge = .3
+        m = np.clip((u * (1 + edge) - r) / edge, 0, 1); m = m * m * (3 - 2 * m)
+        return fa * (1 - m[..., None]) + fb * m[..., None]
+    return fa * (1 - u) + fb * u                                          # dissolve
+
+
 def render_segment(args):
-    """장면 k (seg초) — 끝 xf초 동안 다음 장면으로 서서히 바뀜. 파일 하나로 인코딩"""
-    k, names, seed, seg, xf, out, crf, maxrate = args
+    """장면 k (seg초) — 끝 xf초 동안 정해진 전환 효과로 다음 장면으로 바뀜. 파일 하나로 인코딩"""
+    k, names, seed, seg, xf, out, crf, maxrate = args[:8]; kind = args[8] if len(args) > 8 else 'dissolve'
     a = SCENES[names[k]](seed + k * 101); b = SCENES[names[(k + 1) % len(names)]](seed + ((k + 1) % len(names)) * 101)
-    grains = _grain(seed + k); n = int(seg * FPS); T = seg * len(names)
+    grains = _grain(seed + k); n = int(round(seg * FPS)); T = seg * len(names)
     ff = subprocess.Popen(['ffmpeg', '-y', '-loglevel', 'error', '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-s', f'{CW}x{CH}', '-r', str(FPS), '-i', '-',
                            '-vf', 'scale=1920:1080:flags=lanczos', '-c:v', 'libx264', '-preset', 'medium', '-crf', str(crf), '-x264-params', 'aq-mode=3:keyint=96:min-keyint=96', '-maxrate', maxrate, '-bufsize', '3000k',
                            '-pix_fmt', 'yuv420p', '-an', out], stdin=subprocess.PIPE)
     for i in range(n):
         t = i / FPS; f = a.frame(t)
         if t > seg - xf:
-            u = (t - (seg - xf)) / xf; u = u * u * (3 - 2 * u); f = f * (1 - u) + b.frame(t - seg) * u
+            u = (t - (seg - xf)) / xf; u = u * u * (3 - 2 * u); f = transition(kind, f, b.frame(t - seg), u)
         f = grade(f, grains[i % len(grains)]); f = camera(f, (k * seg + t) / T)
         ff.stdin.write((np.clip(f, 0, 1) * 255).astype(np.uint8).tobytes())
     ff.stdin.close(); ff.wait(); return out
 
 
-def make_loop(names, seed, path, seg=90.0, xf=6.0, crf=21, procs=None, maxrate='1500k'):
-    """장면들을 이어 붙인 끊김 없는 루프 영상 (len(names)*seg 초)"""
+def pick_transitions(n, seed):
+    """장면 n개 사이 전환 효과를 골고루 섞어 고름 (같은 효과가 연달아 나오지 않게)"""
+    R = np.random.default_rng(seed + 7); order = list(R.permutation(TRANS)); out = []
+    while len(out) < n: out += [x for x in order if not out or x != out[-1]]
+    return [str(x) for x in out[:n]]
+
+
+def make_loop(names, seed, path, seg=90.0, xf=8.0, crf=21, procs=None, maxrate='1500k', trans=None):
+    """장면들을 이어 붙인 끊김 없는 루프 영상 (len(names)*seg 초). trans: 장면 사이 전환 효과 목록 (없으면 자동으로 섞음)"""
     from multiprocessing import Pool
+    trans = trans or pick_transitions(len(names), seed)
     parts = [f'{path}.part{k}.mp4' for k in range(len(names))]
-    jobs = [(k, names, seed, seg, xf, parts[k], crf, maxrate) for k in range(len(names))]
+    jobs = [(k, names, seed, seg, xf, parts[k], crf, maxrate, trans[k]) for k in range(len(names))]
     with Pool(procs or min(len(names), os.cpu_count() or 2)) as p: p.map(render_segment, jobs)
     lst = f'{path}.txt'; open(lst, 'w').write(''.join(f"file '{os.path.abspath(x)}'\n" for x in parts))
     subprocess.run(['ffmpeg', '-y', '-loglevel', 'error', '-f', 'concat', '-safe', '0', '-i', lst, '-c', 'copy', path], check=True)

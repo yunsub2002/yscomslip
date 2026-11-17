@@ -40,6 +40,10 @@ INSTR = {
     'epiano':   dict(p=[(1, 1.0, 2.6), (2, .22, 1.1), (3, .07, .6), (7, .025, .25)], att=.004, dur=5.0, gain=.5, bright=.25, trem=(.9, .12)),
     'handpan':  dict(p=[(1, 1.0, 2.6), (2, .5, 1.6), (3, .28, 1.1), (4.1, .08, .5)], att=.002, dur=5.0, gain=.48, bright=.25, thump=.4),
     'bowl':     dict(p=[(1, 1.0, 9.0), (1.004, .6, 8.0), (2.71, .35, 6.0), (5.1, .15, 4.0), (8.0, .06, 2.0)], att=.03, dur=16.0, gain=.4, bright=.1),
+    # v3: 펠트 피아노(현 앞에 천을 대어 아주 부드럽고 가까운 소리) · 가야금(줄을 뜯은 뒤 음이 살짝 흔들리는 농현) · 맑은 벨
+    'felt':     dict(p=[(n, 1 / n ** 2.2, 2.2 / n ** .9) for n in range(1, 7)], att=.012, dur=4.5, gain=.6, inh=.0003, bright=.25, felt=.5),
+    'gayageum': dict(p=[(n, 1 / n ** 1.1, 1.5 / n ** .8) for n in range(1, 9)], att=.003, dur=3.6, gain=.55, bright=.3, pluck=.25, bend=(.012, .0075)),
+    'bell':     dict(p=[(1, 1.0, 3.5), (2.0, .35, 2.0), (3.0, .12, 1.2), (4.2, .1, .8), (5.4, .05, .4)], att=.002, dur=6.0, gain=.38, bright=.25),
 }
 _NOTE = {}
 
@@ -49,11 +53,18 @@ def note(ins, m):
     if k in _NOTE: return _NOTE[k]
     P = INSTR[ins]; f0 = midi_hz(m); n = int(P['dur'] * SR); t = np.arange(n, dtype=np.float32) / SR
     y = np.zeros(n, np.float32); rng = _rng(ins, m)
+    if 'bend' in P:                                      # 가야금 농현: 뜯는 순간 살짝 높았다가 내려오고, 뒤에서 천천히 떨림
+        b0, vd = P['bend']; fac = 1 + b0 * np.exp(-t / .05) + vd * np.sin(2 * np.pi * 5.2 * t) * np.clip((t - .35) / .5, 0, 1)
+        phase = 2 * np.pi * np.cumsum(fac) / SR
+    else: phase = 2 * np.pi * t
     for r, a, tau in P['p']:
         f = f0 * r * (1 + P.get('inh', 0) * r * r)
         if f > SR * .42: continue
         te = tau * (523.0 / f0) ** P['bright']          # 높은 음일수록 조금 빨리 사라짐 (실제 악기처럼)
-        y += (a * np.sin(2 * np.pi * f * t + rng.uniform(0, 6.28)) * np.exp(-t / te)).astype(np.float32)
+        y += (a * np.sin(f * phase + rng.uniform(0, 6.28)) * np.exp(-t / te)).astype(np.float32)
+    if 'felt' in P:                                      # 펠트 해머의 부드러운 '툭' + 아주 작은 건반 소리
+        nn = int(.05 * SR); b = rng.standard_normal(nn).astype(np.float32) * np.exp(-np.arange(nn) / SR / .012).astype(np.float32)
+        y[:nn] += signal.sosfilt(signal.butter(2, [120, 900], 'band', fs=SR, output='sos'), b).astype(np.float32) * P['felt']
     if 'trem' in P:                                      # 비브라폰·일렉피아노 트레몰로
         fr, dp = P['trem']; y *= (1 - dp * .5 + dp * .5 * np.sin(2 * np.pi * fr * t + rng.uniform(0, 6.28))).astype(np.float32)
     if 'thump' in P:                                     # 칼림바·핸드팬: 손가락이 닿는 낮은 '툭'
@@ -81,6 +92,8 @@ SUS = {
     'choir':   dict(att=.9, rel=1.4, vib=(4.6, .004, 1.0), gain=.22, formant=[(300, 110, 1.0), (700, 200, .45), (2500, 500, .05)], voices=3),
     'strings': dict(att=.6, rel=1.2, vib=(5.0, .003, .8), gain=.2, voices=3),
     'pad':     dict(att=1.4, rel=2.5, vib=(4.3, .0018, 0), gain=.16, voices=4),
+    'ocarina': dict(att=.09, rel=.25, vib=(5.0, .003, .4), gain=.3, harm=[1, .06, .1, .02], breath=.014),
+    'daegeum': dict(att=.14, rel=.35, vib=(4.8, .008, .55), gain=.3, harm=[1, .55, .32, .2, .12, .07], breath=.045, scoop=-.012, buzz=.18),
 }
 _SUS = {}
 
@@ -94,7 +107,7 @@ def sus_note(ins, m, dur):
     voices = P.get('voices', 1)
     for vi in range(voices):
         cents = 0 if voices == 1 else [-6, 6, 0, 3][vi]; ch = vi % 2 if voices > 1 else None
-        f = f0 * 2 ** (cents / 1200); drift = 1 + .004 * np.exp(-t / .12) * (1 if ins == 'flute' else 0)
+        f = f0 * 2 ** (cents / 1200); drift = 1 + .004 * np.exp(-t / .12) * (1 if ins == 'flute' else 0) + P.get('scoop', 0) * np.exp(-t / .09)
         ph = 2 * np.pi * f * np.cumsum(vib * drift) / SR
         y = np.zeros(n, np.float32)
         for h in range(1, 14):
@@ -102,8 +115,12 @@ def sus_note(ins, m, dur):
             if fh > SR * .42: break
             if 'formant' in P: a = _formant_w(fh, P['formant']) / h ** .6
             elif ins == 'flute': a = [1, .35, .14, .06, .03][h - 1] if h <= 5 else 0
+            elif 'harm' in P: a = P['harm'][h - 1] if h <= len(P['harm']) else 0
             else: a = (.72 ** (h - 1)) / h
             if a > 1e-3: y += (a * np.sin(h * ph + rng.uniform(0, 6.28))).astype(np.float32)
+        if P.get('buzz'):                                # 대금 청(갈대막) 울림: 높은 배음이 거칠게 떨림
+            bz = signal.sosfilt(signal.butter(2, [min(f * 3, 9000), min(f * 8, 16000)], 'band', fs=SR, output='sos'), np.sin(5 * ph) * (1 + rng.standard_normal(n) * .6)).astype(np.float32)
+            y += bz * P['buzz']
         if ch is None: out += np.vstack([y, y]) * .5
         else: out[ch] += y; out[1 - ch] += y * .35
     if P.get('breath') or ins == 'flute':
@@ -111,7 +128,7 @@ def sus_note(ins, m, dur):
         b = signal.sosfilt(signal.butter(2, [min(f0 * 1.5, 9000), min(f0 * 5, 15000)], 'band', fs=SR, output='sos'), b).astype(np.float32)
         out += np.vstack([b, b]) * (P.get('breath', .02)) * (1 + .5 * np.sin(2 * np.pi * .7 * t))
     a = np.sin(np.clip(t / P['att'], 0, 1) * np.pi / 2) ** 2; r = np.clip((dur + rel - t) / rel, 0, 1) ** 1.5
-    swell = 1 - .18 * np.cos(np.clip(t / max(dur, .5), 0, 1) * 2 * np.pi) if ins in ('flute', 'hum', 'choir', 'strings') else 1   # 가운데가 살짝 부푸는 호흡
+    swell = 1 - .18 * np.cos(np.clip(t / max(dur, .5), 0, 1) * 2 * np.pi) if ins in ('flute', 'hum', 'choir', 'strings', 'ocarina', 'daegeum') else 1   # 가운데가 살짝 부푸는 호흡
     out *= (a * r * swell).astype(np.float32)
     out *= P['gain'] / (np.abs(out).max() + 1e-9) * (300.0 / max(f0, 110)) ** .12
     _SUS[k] = out; return out
@@ -132,14 +149,26 @@ PERC = set(INSTR)
 # 스타일 = 작곡 모드 + 악기 편성. 테마는 style 하나 또는 여러 개(곡마다 번갈아)를 고릅니다.
 STYLE = {
     # --- song: 16마디 자장가 (A A' B A''), 멜로디 3번 반복하며 악기·옥타브 바꿈
-    'musicbox': dict(mode='song', mel='musicbox', acc='harp', oct=6, meter=3, bpm=(54, 64), pad='pad', padv=.8, scales=['major', 'lydian']),
+    'musicbox': dict(mode='song', mel='musicbox', acc='harp', oct=6, meter=3, bpm=(54, 64), pad='pad', padv=.8, scales=['major', 'lydian'], counter='strings'),
     'piano':    dict(mode='song', mel='piano', acc='piano', oct=5, meter=4, bpm=(52, 60), pad='pad', padv=1.0, gain=-2.8, scales=['major', 'mixo']),
-    'harp':     dict(mode='song', mel='celesta', acc='harp', oct=6, meter=3, bpm=(56, 66), pad='pad', padv=.9, scales=['major']),
+    'harp':     dict(mode='song', mel='celesta', acc='harp', oct=6, meter=3, bpm=(56, 66), pad='pad', padv=.9, scales=['major'], counter='ocarina', counterv=.22),
     'mixed':    dict(mode='song', mel='musicbox', acc='piano', oct=6, meter=3, bpm=(52, 62), pad='pad', padv=.9, scales=['major', 'lydian']),
-    'guitar':   dict(mode='song', mel='guitar', acc='guitar', oct=5, meter=3, bpm=(50, 60), pad='strings', padv=.6, scales=['major', 'mixo']),
+    'guitar':   dict(mode='song', mel='guitar', acc='guitar', oct=5, meter=3, bpm=(50, 60), pad='strings', padv=.6, scales=['major', 'mixo'], counter='hum', counterv=.25),
     'humming':  dict(mode='song', mel='hum', acc='harp', oct=5, meter=3, bpm=(48, 56), pad='choir', padv=.7, scales=['major'], gain=-1.5),
     'flute_song': dict(mode='song', mel='flute', acc='guitar', oct=6, meter=4, bpm=(50, 58), pad='strings', padv=.7, scales=['major', 'dorian']),
-    'vibes':    dict(mode='song', mel='vibes', acc='epiano', oct=5, meter=4, bpm=(50, 58), pad='pad', padv=.7, scales=['major', 'lydian']),
+    'vibes':    dict(mode='song', mel='vibes', acc='epiano', oct=5, meter=4, bpm=(50, 58), pad='pad', padv=.7, scales=['major', 'lydian'], counter='choir', counterv=.28),
+    'ocarina_song': dict(mode='song', mel='ocarina', acc='harp', oct=6, meter=3, bpm=(50, 58), pad='pad', padv=.6, scales=['major', 'lydian'], counter='strings', counterv=.25),
+    'bell_song':    dict(mode='song', mel='bell', acc='celesta', oct=5, meter=3, bpm=(52, 60), pad='choir', padv=.55, scales=['major', 'lydian']),
+    # --- nocturne: 펠트 피아노 녹턴 (가까이서 듣는 아주 부드러운 피아노, 루바토)
+    'felt_nocturne':  dict(mode='nocturne', inst='felt', bpm=(46, 54), scales=['major', 'mixo', 'dorian'], wet=.42, gain=-1.0),
+    'piano_nocturne': dict(mode='nocturne', inst='piano', bpm=(44, 52), scales=['major', 'lydian'], pad='strings', padv=.35, wet=.42, gain=-3.0),
+    # --- canon: 돌림노래
+    'musicbox_canon': dict(mode='canon', voices=[('musicbox', 12, .3, .55), ('celesta', 24, -.4, .42), ('bell', 0, .1, .36)], bass='harp', bpm=(54, 62), meter=4, pad='pad', padv=.55, scales=['major', 'lydian']),
+    'harp_canon':     dict(mode='canon', voices=[('harp', 12, -.3, .55), ('ocarina', 12, .35, .4), ('glass', 24, .1, .3)], bass='harp', bpm=(50, 58), meter=3, pad='strings', padv=.45, scales=['major']),
+    'felt_canon':     dict(mode='canon', voices=[('felt', 12, -.2, .55), ('felt', 24, .3, .38), ('hum', 0, 0.0, .3)], bass='felt', bpm=(48, 56), meter=4, pad='pad', padv=.4, scales=['major', 'mixo']),
+    # --- folk: 한국 전통 자장가풍 (5음 음계, 화음 없이)
+    'gayageum_folk': dict(mode='folk', mel='gayageum', mel2='daegeum', acc='gayageum', bpm=(40, 48), scales=['penta', 'mpenta'], drone='strings', wet=.4),
+    'daegeum_folk':  dict(mode='folk', mel='daegeum', mel2='gayageum', acc='gayageum', bpm=(38, 46), scales=['mpenta', 'penta'], wet=.45),
     # --- arp: 느린 아르페지오 + 드문 선율
     'kalimba_arp': dict(mode='arp', arp='kalimba', mel='celesta', bpm=(50, 58), pad='pad', padv=.8, scales=['penta', 'major']),
     'guitar_arp':  dict(mode='arp', arp='guitar', mel='flute', bpm=(46, 54), pad='strings', padv=.6, scales=['major', 'mixo']),
@@ -150,6 +179,8 @@ STYLE = {
     'glass_ambient': dict(mode='ambient', voices=['glass', 'celesta', 'pad', 'glass', 'vibes'], drone='pad', scales=['penta', 'lydian'], wet=.5),
     'bowl_ambient':  dict(mode='ambient', voices=['bowl', 'bowl', 'glass', 'choir', 'handpan'], drone='choir', scales=['mpenta', 'penta'], wet=.55),
     'piano_ambient': dict(mode='ambient', voices=['piano', 'piano', 'epiano', 'strings', 'glass'], drone='strings', scales=['penta', 'major'], wet=.5),
+    'felt_ambient':  dict(mode='ambient', voices=['felt', 'felt', 'felt', 'bell', 'ocarina'], drone='pad', scales=['penta', 'major', 'lydian'], wet=.45),
+    'ocean_ambient': dict(mode='ambient', voices=['glass', 'bell', 'choir', 'handpan', 'pad'], drone='choir', scales=['lydian', 'penta'], wet=.6),
     'kalimba_ambient': dict(mode='ambient', voices=['kalimba', 'kalimba', 'glass', 'pad', 'flute'], drone='pad', scales=['penta'], wet=.45),
     # --- drone: 선법 드론 위에 자유 박자 선율 (명상)
     'flute_drone': dict(mode='drone', mel='flute', drone='strings', chord='choir', scales=['dorian', 'mixo', 'lydian'], wet=.5),
@@ -214,14 +245,150 @@ def compose_song(seed, S):
             for m, v in ((tonic - 12, .36), (tonic + SC[2], .22), (tonic + 7, .2), (tonic + 12, .18)): ev.append((t0 + hum(), S['acc'], m, v, -.2, None))
         if S.get('pad'):
             for ix in ci: ev.append((t0, S['pad'], tonic - 12 + SC[ix % 7] + 12 * (ix // 7), S['padv'] * (.9 if b < total_bars - 2 else .7), 0.0, bar if b < total_bars - 2 else bar * 2.5))
+    cprev = 9
     for p, (ins, up, vel) in enumerate(passes):
         for i, br in enumerate(mel_bars):
             t0 = (intro + p * 16 + i) * bar
+            arch = .84 + .24 * math.sin(math.pi * ((i % 4) + .5) / 4)            # 프레이즈마다 부풀었다 가라앉는 셈여림
             for on, d, ix in br:
-                acc = 1.08 if on == 0 else .95; m = to_midi(ix) + up
-                if ins in SUS: ev.append((t0 + on * beat + hum(), ins, m - 12 if ins == 'hum' else m, vel * acc * float(R.uniform(.9, 1.02)), .15, d * beat * .96))
-                else: ev.append((t0 + on * beat + hum(), ins, m, vel * acc * float(R.uniform(.88, 1.04)), .2 + .04 * (ix - 4), None))
+                acc = 1.08 if on == 0 else .95; m = to_midi(ix) + up; v = vel * acc * arch
+                if ins in SUS: ev.append((t0 + on * beat + hum(), ins, m - 12 if ins == 'hum' else m, v * float(R.uniform(.9, 1.02)), .15, d * beat * .96))
+                else:
+                    if p == n_pass - 1 and d >= 2 and R.random() < .3:            # 마지막 반복: 가끔 윗음에서 꾸밈음
+                        ev.append((t0 + on * beat - .11 * beat, ins, to_midi(ix + 1) + up, v * .45, .2, None))
+                    ev.append((t0 + on * beat + hum(), ins, m, v * float(R.uniform(.88, 1.04)), .2 + .04 * (ix - 4), None))
+            if S.get('counter') and p >= 1:                                       # 두 번째 반복부터 대선율(길게 받쳐 주는 음)
+                ci = chord_idx(chords[i % 16]); cands = [c + 7 for c in ci] + [c + 14 for c in ci]
+                cprev = min(cands, key=lambda c: abs(c - cprev) + R.uniform(0, 1.5))
+                ev.append((t0 + hum(), S['counter'], to_midi(cprev) - 12, S.get('counterv', .32) * arch, -.35, bar * .98))
     return ev, total_bars * bar, dict(tonic=tonic, bpm=round(bpm), meter=meter, scale=sc_name, mode='song', inst=mel)
+
+
+def compose_nocturne(seed, S):
+    """녹턴: 왼손은 셋잇단 분산화음, 오른손은 느린 노래. 프레이즈 끝마다 템포가 살짝 느려짐(루바토)"""
+    R = np.random.default_rng(seed); sc_name = str(R.choice(S['scales'])); SC = SCALES[sc_name]; tonic = _tonic(R)
+    bpm = float(R.uniform(*S['bpm'])); beat = 60 / bpm; ins = S['inst']
+    P = [int(x) for x in PROGS[R.integers(len(PROGS))]]; Q = [int(x) for x in PROGS[R.integers(len(PROGS))]]
+    plan = [('A', P), ('A', P), ('B', Q), ('A2', P)]; prog = sum([p[1] + p[1] for p in plan], [])     # 32마디
+    total = 1 + len(prog) + 2
+    lens = [4 * beat * (1 + (.09 if (i - 1) % 4 == 3 else 0) + (.18 if i >= total - 2 else 0)) for i in range(total)]   # 루바토
+    starts = np.concatenate([[0], np.cumsum(lens)]); ev = []
+    to_m = lambda ix: tonic + SC[ix % 7] + 12 * (ix // 7)
+    LH = [0, 4, 9, 4, 7, 4, 0, 4, 9, 4, 11, 4]                                       # 근음·5도·10도 셋잇단 12개
+    mel_rh = [[2, 2], [3, 1], [4], [1, 1, 2], [2, 1, 1], [1.5, .5, 2]]
+    prev = 9; cache = {}
+    for b in range(total):
+        t0 = starts[b]; L = lens[b]; tri = L / 12
+        if b == 0 or b >= total - 2: deg = 1
+        else: deg = prog[b - 1]
+        ci = chord_idx(deg); root = tonic - 24 + SC[ci[0] % 7] + (12 if ci[0] >= 4 else 0)
+        third = SC[ci[1] % 7] - SC[ci[0] % 7]; third += 12 if third < 0 else 0
+        offs = [0, 7, 12 + third, 7, 12, 7, 0, 7, 12 + third, 7, 19 if b % 2 else 12 + third, 7]
+        if b >= total - 2:
+            if b == total - 2:
+                for k, o in enumerate([0, 7, 12 + third, 19, 24]): ev.append((t0 + k * tri * 1.5, ins, root + o, .3 - .03 * k, -.3 + .12 * k, None))
+            continue
+        for k, o in enumerate(offs):
+            v = (.34 if k == 0 else .2 if k % 3 == 0 else .15) * float(R.uniform(.9, 1.05))
+            ev.append((t0 + k * tri + float(R.normal(0, .006)), ins, root + o, v, -.35 + .03 * k, None))
+        if b == 0: continue
+        sec = plan[(b - 1) // 8][0]; bi = (b - 1) % 8; key = (sec, bi)
+        if sec == 'A' and key in cache and (b - 1) // 8 == 1: notes = cache[key]                      # 두 번째 A는 첫 A를 그대로 (기억에 남는 선율)
+        else:
+            rh = [4] if bi in (3, 7) else mel_rh[R.integers(len(mel_rh))]; notes = []; on = 0.0
+            center = 11 if sec == 'B' else 9
+            for j, d in enumerate(rh):
+                if j == 0 or bi in (3, 7):
+                    cands = [c + 7 * o for c in ci for o in (1, 2) if 6 <= c + 7 * o <= 14]
+                    if bi == 7 and sec == 'A2': cands = [c for c in cands if c % 7 == 0] or [7]
+                    prev = min(cands, key=lambda c: abs(c - prev) + .3 * abs(c - center) + R.uniform(0, 1.2))
+                else: prev = int(np.clip(prev + int(R.choice([-2, -1, -1, 1, 1, 2])), 5, 15))
+                notes.append((on, d, prev)); on += d
+            cache[key] = notes
+        arch = .82 + .26 * math.sin(math.pi * (bi % 4 + .5) / 4)
+        for on, d, ix in notes:
+            m = to_m(ix) + (12 if sec == 'A2' else 0)
+            if d >= 2 and R.random() < .2: ev.append((t0 + on * L / 4 - .08, ins, to_m(ix + 1) + (12 if sec == 'A2' else 0), .22 * arch, .2, None))
+            ev.append((t0 + on * L / 4 + float(R.normal(0, .01)), ins, m, .5 * arch * (1.06 if on == 0 else .95), .15, None))
+            if S.get('octave') and on == 0: ev.append((t0 + on * L / 4 + .012, ins, m - 12, .2 * arch, .1, None))
+        if S.get('pad'):
+            for ix in ci: ev.append((t0, S['pad'], tonic - 12 + SC[ix % 7] + 12 * (ix // 7), S['padv'], 0.0, L))
+    return ev, float(starts[-1]), dict(tonic=tonic, bpm=round(bpm), meter=4, scale=sc_name, mode='nocturne', inst=ins)
+
+
+def compose_canon(seed, S):
+    """돌림노래(캐논): 4마디 화음 고리 위에 8마디 선율이 4마디 간격으로 악기를 바꿔 차례로 들어옴"""
+    R = np.random.default_rng(seed); sc_name = str(R.choice(S['scales'])); SC = SCALES[sc_name]; tonic = _tonic(R)
+    bpm = float(R.uniform(*S['bpm'])); beat = 60 / bpm; meter = S.get('meter', 4); bar = meter * beat
+    loop = [int(x) for x in PROGS[R.integers(len(PROGS))]]
+    rh = RHY3 if meter == 3 else RHY4; mel = []; prev = 7
+    for b in range(8):
+        ci = chord_idx(loop[b % 4]); r = [meter] if b in (3, 7) else rh[R.integers(len(rh))]; on = 0.0
+        for j, d in enumerate(r):
+            if j == 0: prev = min([c + 7 * o for c in ci for o in (0, 1, 2) if 3 <= c + 7 * o <= 13], key=lambda c: abs(c - prev) + R.uniform(0, 1.5))
+            else: prev = int(np.clip(prev + int(R.choice([-1, -1, 1, 1, 2, -2])), 3, 13))
+            mel.append((b, on, d, prev)); on += d
+    voices = S['voices']; n_v = len(voices); body = 4 * (n_v - 1) + 16 + 4; total = 1 + body + 2; ev = []
+    to_m = lambda ix: tonic + SC[ix % 7] + 12 * (ix // 7)
+    for b in range(total):
+        t0 = b * bar; deg = loop[(b - 1) % 4] if 1 <= b <= body else 1; ci = chord_idx(deg)
+        if b < total - 2:
+            ev.append((t0, S['bass'], tonic - 24 + SC[ci[0] % 7] + (12 if ci[0] >= 4 else 0), .34, -.1, None))
+            if meter == 4: ev.append((t0 + 2 * beat, S['bass'], tonic - 12 + SC[ci[2] % 7] - (12 if ci[2] >= 7 else 0), .2, -.1, None))
+        elif b == total - 2: ev.append((t0, S['bass'], tonic - 24, .34, -.1, None))
+        if S.get('pad'):
+            for ix in ci: ev.append((t0, S['pad'], tonic - 12 + SC[ix % 7] + 12 * (ix // 7), S['padv'], 0.0, bar if b < total - 2 else bar * 2.5))
+    for vi, (ins, up, pn, vel) in enumerate(voices):
+        start = 1 + 4 * vi
+        for rr in range(3):
+            for b, on, d, ix in mel:
+                bb = start + b + 8 * rr
+                if bb > body: continue
+                fade = 1 - .4 * max(0, bb - (body - 4)) / 4
+                t = bb * bar + on * beat + float(R.normal(0, .008))
+                if ins in SUS: ev.append((t, ins, to_m(ix) + up, vel * fade, pn, d * beat * .95))
+                else: ev.append((t, ins, to_m(ix) + up, vel * fade * (1.06 if on == 0 else .95), pn, None))
+    for k, ix in enumerate([0, 2, 4, 7]): ev.append(((total - 2) * bar + k * beat * .5, voices[0][0] if voices[0][0] in PERC else 'harp', to_m(ix), .3, -.2 + .15 * k, None))
+    return ev, total * bar, dict(tonic=tonic, bpm=round(bpm), meter=meter, scale=sc_name, mode='canon', inst=voices[0][0])
+
+
+def compose_folk(seed, S):
+    """한국 전통 자장가풍: 5음 음계(평조·계면조), 느린 3박(길게-짧게), 가야금 반주 위로 대금·가야금이 주고받음 (화음 없이)"""
+    R = np.random.default_rng(seed); sc_name = str(R.choice(S['scales'])); SC = SCALES[sc_name]; n5 = len(SC); tonic = _tonic(R)
+    bpm = float(R.uniform(*S['bpm'])); beat = 60 / bpm; bar = 3 * beat; ev = []
+    to_m = lambda ix: tonic + SC[ix % n5] + 12 * (ix // n5)
+    RH = [[2, 1], [3], [1, 1, 1], [2, 1], [1.5, .5, 1]]
+    def phrase(center, end):
+        out = []; cur = center
+        for b in range(4):
+            r = [3] if b == 3 else RH[R.integers(len(RH))]; on = 0.0; bb = []
+            for j, d in enumerate(r):
+                if b == 3: cur = end
+                elif j == 0 and b == 0: cur = center
+                else: cur = int(np.clip(cur + int(R.choice([-2, -1, -1, 1, 1, 2, 0])), center - 3, center + 4))
+                bb.append((on, d, cur)); on += d
+            out.append(bb)
+        return out
+    A = phrase(n5 + 2, n5 + 1); A2 = A[:3] + phrase(n5 + 2, n5)[3:]; B = phrase(n5 + 4, n5 + 2); A3 = A[:2] + phrase(n5 + 1, n5)[2:]
+    song = A + A2 + B + A3; passes = [(S['mel'], 0, .62), (S['mel2'], 12 if S['mel2'] in PERC else 0, .5), (S['mel'], 0, .56)]
+    intro = 2; total = intro + 16 * len(passes) + 3
+    for b in range(total):
+        t0 = b * bar
+        if b < total - 2:                                                               # 가야금 반주: 1박 근음, 3박 5도, 가끔 옥타브
+            ev.append((t0 + float(R.normal(0, .01)), S['acc'], to_m(0) - 12, .36, -.3, None))
+            ev.append((t0 + 2 * beat + float(R.normal(0, .01)), S['acc'], to_m(n5 - 2 if n5 == 5 else 4) - 12, .24, -.25, None))
+            if b % 4 == 3: ev.append((t0 + 2.5 * beat, S['acc'], to_m(n5) - 12, .18, -.2, None))
+        elif b == total - 2:
+            for k, ix in enumerate([0, 2, n5, n5 + 2]): ev.append((t0 + k * .35, S['acc'], to_m(ix) - 12, .3, -.3 + .15 * k, None))
+        if S.get('drone') and b < total - 1: ev.append((t0, S['drone'], to_m(0) - 24, .35, 0.0, bar * 1.02))
+    for p, (ins, up, vel) in enumerate(passes):
+        for i, br in enumerate(song):
+            t0 = (intro + p * 16 + i) * bar; arch = .84 + .24 * math.sin(math.pi * ((i % 4) + .5) / 4)
+            for on, d, ix in br:
+                t = t0 + on * beat + float(R.normal(0, .015)); m = to_m(ix) + up
+                if ins in SUS: ev.append((t, ins, m, vel * arch, .15, d * beat * .97))
+                else: ev.append((t, ins, m, vel * arch * (1.06 if on == 0 else .95), .15, None))
+    return ev, total * bar, dict(tonic=tonic, bpm=round(bpm), meter=3, scale=sc_name, mode='folk', inst=S['mel'])
 
 
 def compose_arp(seed, S):
@@ -300,7 +467,7 @@ def compose_drone(seed, S):
     return ev, L, dict(tonic=tonic + 12, bpm=0, meter=0, scale=sc_name, mode='drone', inst=mel)
 
 
-COMPOSE = {'song': compose_song, 'arp': compose_arp, 'ambient': compose_ambient, 'drone': compose_drone}
+COMPOSE = {'song': compose_song, 'arp': compose_arp, 'ambient': compose_ambient, 'drone': compose_drone, 'nocturne': compose_nocturne, 'canon': compose_canon, 'folk': compose_folk}
 
 
 def compose(seed, style):
@@ -377,10 +544,39 @@ class Events:
 
 
 # CAL: 0dB = 음악과 같은 크기(약 -20dBFS)가 되도록 하는 보정값 (dB)
+# CAL: 0dB = 음악과 같은 크기(약 -20dBFS)가 되도록 하는 보정값 (dB)
 CAL = {'rain': -4.2, 'waves': 1.3, 'pink': 8.7, 'brown': -8.8, 'white': 11.6, 'heart': -12.7, 'fire': -10.9,
-       'drips': -9.5, 'thunder': -10.0, 'stream': -20.5, 'wind': -13.5, 'chimes': 3.0, 'crickets': 29.5, 'clock': -3.0, 'purr': -2.7}
+       'drips': -9.5, 'thunder': -10.0, 'stream': -20.5, 'wind': -13.5, 'chimes': 3.0, 'crickets': 29.5, 'clock': -3.0, 'purr': -2.7,
+       'leaves': 5.5, 'tent': 3.6, 'underwater': -29.7, 'frogs': -4.0, 'owl': -2.0, 'bamboo': -7.0, 'pages': -11.0}
+LAYER_KO = {'rain': '빗소리', 'drips': '처마 빗방울', 'thunder': '먼 천둥', 'waves': '파도', 'stream': '시냇물', 'wind': '바람', 'chimes': '풍경',
+            'crickets': '귀뚜라미', 'fire': '장작', 'clock': '괘종시계', 'purr': '고양이 골골', 'pink': '핑크 노이즈', 'brown': '브라운 노이즈',
+            'white': '백색소음', 'heart': '심장 박동', 'leaves': '나뭇잎 빗소리', 'tent': '텐트 빗소리', 'underwater': '깊은 물속', 'frogs': '개구리',
+            'owl': '부엉이', 'bamboo': '대나무 부딪힘', 'pages': '책장 넘김'}
 PINK_B, PINK_A = [0.049922035, -0.095993537, 0.050612699, -0.004408786], [1, -2.494956002, 2.017265875, -0.522189400]
 PENTA_CHIME = [0, 2, 4, 7, 9, 12, 14, 16]
+
+# 장면마다 함께 들리는 자연음 (dB). 화면이 바뀌면 소리도 같은 시점에 서서히 바뀝니다.
+SCENE_AMB = {
+    'night': {'wind': -24, 'crickets': -24}, 'rainwin': {'rain': -7}, 'storm': {'rain': -5, 'thunder': -5}, 'eaves': {'rain': -10, 'drips': -4},
+    'sea': {'waves': -6}, 'firefly': {'crickets': -15, 'frogs': -24}, 'snow': {'wind': -18}, 'aurora': {'wind': -21}, 'pastel': {'pink': -24},
+    'warm': {'fire': -14}, 'candle': {'fire': -19}, 'nursery': {'pink': -24, 'clock': -26}, 'stream': {'stream': -7, 'crickets': -24},
+    'study': {'clock': -14, 'pages': -8, 'rain': -22}, 'bamboo': {'wind': -13, 'bamboo': -7, 'leaves': -18}, 'pond': {'leaves': -9, 'frogs': -15, 'drips': -14},
+    'camp': {'fire': -10, 'crickets': -21, 'owl': -14}, 'underwater': {'underwater': -6}, 'meadow': {'wind': -16, 'crickets': -18, 'owl': -17},
+    'snowwin': {'wind': -20, 'fire': -21, 'clock': -28}, 'tentrain': {'tent': -5, 'thunder': -16},
+}
+
+
+class SceneMix:
+    """영상 장면 일정과 똑같이 장면별 자연음 크기(선형 배수)를 계산. 영상: 장면 seg초 + 끝 xf초 동안 다음 장면으로 전환"""
+    def __init__(s, scenes, seg, xf, db=0.0):
+        s.sc, s.seg, s.xf = list(scenes), float(seg), float(xf)
+        s.keys = sorted({k for nm in s.sc for k in SCENE_AMB.get(nm, {})})
+        s.tab = np.array([[10 ** ((SCENE_AMB.get(nm, {}).get(k, -200) + db) / 20) for k in s.keys] for nm in s.sc], np.float32)   # (장면, 레이어)
+    def __call__(s, t):
+        n = len(s.sc); tl = t % (n * s.seg); k = (tl // s.seg).astype(int) % n; w = tl - k * s.seg
+        u = np.clip((w - (s.seg - s.xf)) / s.xf, 0, 1); u = u * u * (3 - 2 * u)
+        a = s.tab[k] * (1 - u)[:, None] + s.tab[(k + 1) % n] * u[:, None]
+        return {key: a[:, i] for i, key in enumerate(s.keys)}
 
 
 def _drip(R, f0=900, up=1.6, dur=.05):
@@ -390,118 +586,222 @@ def _drip(R, f0=900, up=1.6, dur=.05):
     return y.astype(np.float32)
 
 
+def _frog(R):
+    """개구리 '개굴': 짧은 펄스 2~3개, 펄스마다 거친 목울림"""
+    f = float(R.uniform(450, 1100)); am = float(R.uniform(35, 70)); k = int(R.integers(2, 4)); L = int(.11 * SR); gap = int(R.uniform(.08, .14) * SR)
+    y = np.zeros(k * (L + gap), np.float32); t = np.arange(L) / SR
+    for j in range(k):
+        env = np.sin(np.pi * t / (L / SR)) ** 1.5; tone = (np.sin(2 * np.pi * f * t) + .4 * np.sin(2 * np.pi * f * 2 * t)) * (.55 + .45 * np.sign(np.sin(2 * np.pi * am * t)))
+        y[j * (L + gap): j * (L + gap) + L] = (tone * env * (1 - .15 * j)).astype(np.float32)
+    return signal.sosfilt(bw('low', 2600), y).astype(np.float32)
+
+
+def _owl(R):
+    """부엉이 '부엉~ 부엉': 낮고 둥근 소리 두 번"""
+    f = float(R.uniform(330, 420)); out = []
+    for d, fr in ((.42, 1.0), (.22, .1), (.55, .97)):
+        n = int(d * SR); t = np.arange(n) / SR
+        if fr < .5: out.append(np.zeros(n, np.float32)); continue
+        env = np.sin(np.pi * t / d) ** 2; ff = f * fr * (1 + .03 * np.sin(np.pi * t / d))
+        out.append((np.sin(2 * np.pi * np.cumsum(ff) / SR) * env + .08 * np.sin(4 * np.pi * np.cumsum(ff) / SR) * env).astype(np.float32))
+    return np.concatenate(out)
+
+
+def _clack(R):
+    """대나무끼리 '딱': 속이 빈 나무 공명"""
+    f = float(R.uniform(500, 1100)); n = int(.18 * SR); t = np.arange(n) / SR
+    y = np.sin(2 * np.pi * f * t) * np.exp(-t / .035) + .5 * np.sin(2 * np.pi * f * 2.7 * t) * np.exp(-t / .015) + R.standard_normal(n) * np.exp(-t / .002) * .3
+    return y.astype(np.float32)
+
+
+def _page(R):
+    """책장 넘기는 '사락'"""
+    d = float(R.uniform(.5, .9)); n = int(d * SR); t = np.arange(n) / SR
+    env = np.sin(np.pi * np.clip(t / d, 0, 1)) ** 1.5 * (1 + .6 * np.sin(2 * np.pi * 9 * t) ** 2)
+    x = signal.sosfilt(bw('band', [1800, 7000]), R.standard_normal(n)) * env
+    x[-int(.06 * SR):] += signal.sosfilt(bw('band', [300, 1500]), R.standard_normal(int(.06 * SR))) * np.exp(-np.arange(int(.06 * SR)) / SR / .015) * 1.5   # 종이가 내려앉는 '툭'
+    return x.astype(np.float32)
+
+
 class Ambience:
-    """layers: {이름: dB} — rain, drips, thunder, waves, stream, wind, chimes, crickets, fire, clock, purr, pink, brown, white, heart"""
-    def __init__(s, layers, seed=0):
-        s.L = layers; s.R = np.random.default_rng(seed); s.t0 = 0; R = s.R
+    """layers: {이름: dB} (항상 들림) + scene: SceneMix (장면 따라 바뀜)
+    rain drips thunder waves stream wind chimes crickets fire clock purr pink brown white heart leaves tent underwater frogs owl bamboo pages"""
+    def __init__(s, layers, seed=0, scene=None):
+        s.L = dict(layers or {}); s.scene = scene; s.R = np.random.default_rng(seed); s.t0 = 0; R = s.R
+        s.on = set(s.L) | set(scene.keys if scene else [])
         s.pink = LF(PINK_B, PINK_A); s.brown = LF([1], [1, -.996]); s.dc = Filt(bw('high', 25, 1))
         s.rain_bp = Filt(bw('band', [380, 8500])); s.rain_lo = Filt(bw('low', 260))
         s.drops = [(LF(*resonator(f, .012), ch=1), f) for f in R.uniform(1700, 4600, 4)]
         s.wave_lp = Filt(bw('low', 1300)); s.wave_hs = Filt(bw('band', [1800, 7000]))
         s.white_lp = Filt(bw('low', 7500)); s.heart = LF(*resonator(52, .07), ch=1); s.heart_lp = Filt(bw('low', 420))
         s.fire_lo = Filt(bw('low', 320)); s.crk = LF(*resonator(2600, .004), ch=1); s.crk_hp = Filt(bw('high', 900), ch=1)
-        # v2
         s.ev = Events(20.0)
         s.st_bp = Filt(bw('band', [500, 3200])); s.st_lo = Filt(bw('band', [90, 420]))
         s.bubbles = [(LF(*resonator(f, .006), ch=1), f) for f in R.uniform(700, 2400, 6)]
-        s.wind_f = float(R.uniform(250, 500)); s.wind_bp = None; s.wind_lo = Filt(bw('low', 900))
+        s.wind_f = float(R.uniform(250, 500)); s.wind_bp = Filt(bw('band', [s.wind_f * .6, s.wind_f * 1.6], 1)); s.wind_lo = Filt(bw('low', 900))
         s.chime_root = 72 + int(R.choice([0, 2, 5, 7])); s.chime_next = 3.0
         s.crick = [(float(R.uniform(3900, 5200)), float(R.uniform(22, 34)), float(R.uniform(0, 6.3)), float(R.uniform(-.8, .8)), float(R.uniform(.5, 1.0)), float(R.uniform(2.5, 4.5))) for _ in range(5)]
-        s.crick_lp = Filt(bw('low', 5600)); s.thunder_next = float(R.uniform(25, 60)); s.th_lp = Filt(bw('low', 110))
+        s.crick_lp = Filt(bw('low', 5600)); s.thunder_next = float(R.uniform(25, 60))
         s.clock_i = 0; s.purr_lp = Filt(bw('low', 320)); s.purr_bp = Filt(bw('band', [60, 240]))
         s.drip_cache = [_drip(R, float(R.uniform(650, 1500)), float(R.uniform(1.3, 2.0)), float(R.uniform(.035, .07))) for _ in range(12)]
+        # v3
+        s.leaf_bp = Filt(bw('band', [1400, 6500])); s.leaf_res = [(LF(*resonator(f, .004), ch=1), f) for f in R.uniform(2500, 6000, 4)]
+        s.leaf_drip = [_drip(R, float(R.uniform(400, 800)), float(R.uniform(1.2, 1.5)), float(R.uniform(.05, .09))) for _ in range(8)]
+        s.tent_res = [(LF(*resonator(f, .02), ch=1), f) for f in R.uniform(160, 420, 5)]; s.tent_bp = Filt(bw('band', [200, 1600]))
+        s.uw_lp = Filt(bw('low', 280)); s.uw_bp = Filt(bw('band', [80, 500])); s.uw_next = float(R.uniform(3, 9))
+        s.frogs = [(float(R.uniform(1.2, 4.5)), float(R.uniform(0, 4)), float(R.uniform(-.8, .8)), _frog(R), float(R.uniform(.4, 1.0))) for _ in range(4)]
+        s.frog_next = [f[1] for f in s.frogs]
+        s.owl_next = float(R.uniform(20, 50)); s.owl_snd = _owl(R)
+        s.bam_next = float(R.uniform(2, 6)); s.page_next = float(R.uniform(15, 40))
 
     def noise(s, n, corr=.55):  # 좌우가 약간 다른 자연스러운 스테레오 노이즈
         a = s.R.standard_normal(n).astype(np.float32); b = s.R.standard_normal((2, n)).astype(np.float32)
         return corr * a + math.sqrt(1 - corr * corr) * b
 
     def __call__(s, n):
-        t = (s.t0 + np.arange(n)) / SR; T0 = s.t0 / SR; out = np.zeros((2, n), np.float32); R = s.R
-        g = lambda k: 10 ** ((s.L[k] + CAL[k]) / 20)
+        t = (s.t0 + np.arange(n)) / SR; T0 = s.t0 / SR; T1 = T0 + n / SR; out = np.zeros((2, n), np.float32); R = s.R
+        env = s.scene(t) if s.scene else {}
+        G = {}
+        for k in s.on:
+            base = 10 ** (s.L[k] / 20) if k in s.L else 0.0
+            G[k] = ((base + env[k]) if k in env else np.float32(base)) * 10 ** (CAL[k] / 20)
+        g = lambda k: G[k]
+        gi = lambda k, i: float(G[k][min(max(i, 0), n - 1)]) if np.ndim(G[k]) else float(G[k])   # 순간 소리(이벤트)용
+        live = lambda k: k in G and (np.max(G[k]) > 1e-5)
         s.ev.begin(n)
-        need_pink = any(k in s.L for k in ('pink', 'rain', 'waves', 'stream', 'wind'))
-        pk = s.pink(s.noise(n)) * 3.2 if need_pink else None
-        if 'pink' in s.L: out += pk * .18 * g('pink')
-        if any(k in s.L for k in ('brown', 'heart', 'fire', 'rain', 'thunder', 'wind', 'stream', 'purr')):
-            br = s.dc(s.brown(s.noise(n, .7)) * .055)
-            if 'brown' in s.L: out += br * .9 * g('brown')
-        if 'white' in s.L: out += s.white_lp(s.noise(n, .3)) * .06 * g('white')
-        if 'rain' in s.L:
+        pk = s.pink(s.noise(n)) * 3.2
+        br = s.dc(s.brown(s.noise(n, .7)) * .055)
+        if live('pink'): out += pk * .18 * g('pink')
+        if live('brown'): out += br * .9 * g('brown')
+        if live('white'): out += s.white_lp(s.noise(n, .3)) * .06 * g('white')
+        if live('rain'):
             m = 1 + .14 * np.sin(2 * np.pi * t / 41) + .08 * np.sin(2 * np.pi * t / 13.7)
             base = s.rain_bp(pk) * .55 * m; dr = np.zeros((2, n), np.float32)
             for i, (rf, f) in enumerate(s.drops):
                 imp = (R.random(n) < 9 / SR) * R.exponential(1, n) * R.choice([-1, 1], n)
                 d = rf(imp[None].astype(np.float32))[0] * .5; dr[i % 2] += d; dr[1 - i % 2] += d * .45
             out += (base + dr * m + s.rain_lo(br) * .5) * g('rain')
-        if 'drips' in s.L:   # 처마·지붕에서 떨어지는 물방울: 2~5초마다 몇 개씩 몰려 떨어짐
+        if live('drips'):   # 처마·지붕에서 떨어지는 물방울
             rate = (2.2 + 1.5 * np.sin(2 * np.pi * T0 / 37)) / SR
-            idx = np.where(R.random(n) < rate)[0]
-            for i in idx:
+            for i in np.where(R.random(n) < rate)[0]:
                 d = s.drip_cache[R.integers(len(s.drip_cache))] * float(R.uniform(.5, 1.0)) * .9
-                s.ev.add(int(i), pan(d, float(R.uniform(-.7, .7))) * g('drips'))
-        if 'thunder' in s.L:  # 먼 천둥: 1~3분에 한 번, 5~12초 낮은 울림
-            while s.thunder_next < T0 + n / SR:
-                dur = float(R.uniform(5, 12)); k = int(dur * SR); tt = np.arange(k) / SR
-                env = (np.exp(-tt / (dur * .3)) * (1 - np.exp(-tt / .4))) * (1 + .5 * np.sin(2 * np.pi * tt * R.uniform(.3, 1.2)) * np.exp(-tt / 3))
-                x = R.standard_normal((2, k)).astype(np.float32) * env.astype(np.float32)
-                x = Filt(bw('low', float(R.uniform(70, 130))))(x) * 9.0 * float(R.uniform(.5, 1.0))
-                s.ev.add(int((s.thunder_next - T0) * SR), x * g('thunder')); s.thunder_next += float(R.uniform(50, 170))
-        if 'waves' in s.L:
-            def env(off):
+                s.ev.add(int(i), pan(d, float(R.uniform(-.7, .7))) * gi('drips', i))
+        if 'thunder' in G:  # 먼 천둥: 1~3분에 한 번
+            while s.thunder_next < T1:
+                i0 = int((s.thunder_next - T0) * SR); a = gi('thunder', i0)
+                if a > 1e-5:
+                    dur = float(R.uniform(5, 12)); k = int(dur * SR); tt = np.arange(k) / SR
+                    e = (np.exp(-tt / (dur * .3)) * (1 - np.exp(-tt / .4))) * (1 + .5 * np.sin(2 * np.pi * tt * R.uniform(.3, 1.2)) * np.exp(-tt / 3))
+                    x = Filt(bw('low', float(R.uniform(70, 130))))(R.standard_normal((2, k)).astype(np.float32) * e.astype(np.float32)) * 9.0 * float(R.uniform(.5, 1.0))
+                    s.ev.add(i0, x * a)
+                s.thunder_next += float(R.uniform(50, 170))
+        if live('waves'):
+            def wenv(off):
                 ph = 2 * np.pi / 9.5 * (t - .15 * 71 / (2 * np.pi) * np.cos(2 * np.pi * t / 71) - .1 * 23 / (2 * np.pi) * np.cos(2 * np.pi * t / 23)) + off
                 sw = .5 - .5 * np.cos(ph); return (.18 + .82 * sw ** 1.6).astype(np.float32)
-            e = np.vstack([env(0), env(.35)]); wash = np.vstack([env(-.9), env(-.6)]) ** 2.2
+            e = np.vstack([wenv(0), wenv(.35)]); wash = np.vstack([wenv(-.9), wenv(-.6)]) ** 2.2
             out += (s.wave_lp(pk) * .9 * e + s.wave_hs(pk) * .35 * wash) * g('waves')
-        if 'stream' in s.L:   # 시냇물: 찰랑이는 중음 + 낮은 콸콸 + 보글보글 기포
-            m = 1 + .12 * np.sin(2 * np.pi * t / 5.3) + .08 * np.sin(2 * np.pi * t / 1.7 + 1)
-            bub = np.zeros((2, n), np.float32)
+        if live('stream'):
+            m = 1 + .12 * np.sin(2 * np.pi * t / 5.3) + .08 * np.sin(2 * np.pi * t / 1.7 + 1); bub = np.zeros((2, n), np.float32)
             for i, (rf, f) in enumerate(s.bubbles):
                 imp = (R.random(n) < 14 / SR) * R.exponential(1, n) * R.choice([-1, 1], n)
                 d = rf(imp[None].astype(np.float32))[0] * .45; bub[i % 2] += d; bub[1 - i % 2] += d * .4
             out += (s.st_bp(pk) * .5 * m + s.st_lo(br) * 6.0 * (1 + .3 * np.sin(2 * np.pi * t / 3.1)) + bub) * g('stream')
-        if 'wind' in s.L:     # 바람: 천천히 움직이는 밴드패스 + 돌풍
+        if live('wind'):
             gust = (.45 + .55 * (.5 + .5 * np.sin(2 * np.pi * t / 23 + 1.3)) ** 2 * (.6 + .4 * np.sin(2 * np.pi * t / 7.1)))
-            fc = s.wind_f * (1 + .35 * np.sin(2 * np.pi * T0 / 19))
-            s.wind_bp = s.wind_bp or Filt(bw('band', [fc * .6, fc * 1.6], 1))
             out += (s.wind_bp(pk) * .8 * gust + s.wind_lo(br) * 2.5 * gust) * g('wind')
-        if 'chimes' in s.L:   # 풍경: 바람이 불 때 2~6개 음이 흩어져 울림
-            while s.chime_next < T0 + n / SR:
-                k = int(R.choice([1, 2, 2, 3, 4, 5])); tt = s.chime_next
-                for j in range(k):
-                    m = s.chime_root + int(R.choice(PENTA_CHIME)); x = note('glass', m) * float(R.uniform(.25, .6))
-                    s.ev.add(int((tt - T0) * SR), pan(x, float(R.uniform(-.8, .8))) * g('chimes')); tt += float(R.uniform(.08, .6))
+        if 'chimes' in G:
+            while s.chime_next < T1:
+                tt = s.chime_next; a = gi('chimes', int((tt - T0) * SR))
+                if a > 1e-5:
+                    for j in range(int(R.choice([1, 2, 2, 3, 4, 5]))):
+                        x = note('glass', s.chime_root + int(R.choice(PENTA_CHIME))) * float(R.uniform(.25, .6))
+                        s.ev.add(int((tt - T0) * SR), pan(x, float(R.uniform(-.8, .8))) * a); tt += float(R.uniform(.08, .6))
                 s.chime_next += float(R.uniform(2.5, 14))
-        if 'crickets' in s.L: # 귀뚜라미: 몇 마리가 각자 박자로 찌르르
+        if live('crickets'):
             cr = np.zeros((2, n), np.float32)
             for f, rate, ph, pn, lv, bp in s.crick:
-                chirp = np.clip((np.sin(2 * np.pi * rate * t + ph) - .3) * 6, 0, 1).astype(np.float32)        # 찌르르 펄스 (모서리 둥글게)
-                burst = np.clip((np.sin(2 * np.pi * t / bp + ph) + .2) * 3, 0, 1).astype(np.float32)          # 울었다 쉬었다
+                chirp = np.clip((np.sin(2 * np.pi * rate * t + ph) - .3) * 6, 0, 1).astype(np.float32)
+                burst = np.clip((np.sin(2 * np.pi * t / bp + ph) + .2) * 3, 0, 1).astype(np.float32)
                 tone = np.sin(2 * np.pi * f * t) * (.5 + .5 * np.sin(2 * np.pi * f * .0092 * t)) * chirp * burst * lv
                 a = (pn + 1) * math.pi / 4; cr[0] += tone * math.cos(a); cr[1] += tone * math.sin(a)
             out += s.crick_lp(cr) * .012 * g('crickets')
-        if 'fire' in s.L:
+        if live('fire'):
             roar = s.fire_lo(br) * (1.3 + .25 * np.sin(2 * np.pi * t / 7.3) + .15 * np.sin(2 * np.pi * t / 2.9))
-            burst = (R.random(n) < 5 / SR) * R.exponential(1, n) ** 1.5
-            burst += (R.random(n) < 40 / SR) * R.exponential(.15, n)
+            burst = (R.random(n) < 5 / SR) * R.exponential(1, n) ** 1.5 + (R.random(n) < 40 / SR) * R.exponential(.15, n)
             ck = s.crk_hp(s.crk(burst[None].astype(np.float32)))[0] * 1.4
             out += (roar + np.vstack([ck, ck * .7])) * g('fire')
-        if 'clock' in s.L:    # 괘종시계 똑·딱
-            while s.clock_i * 1.0 < T0 + n / SR:
-                f = 2300 if s.clock_i % 2 == 0 else 1900; k = int(.06 * SR); tt = np.arange(k) / SR
-                x = (np.sin(2 * np.pi * f * tt) * .6 + np.sin(2 * np.pi * f * 2.3 * tt) * .25 + R.standard_normal(k) * .15 * np.exp(-tt / .003)) * np.exp(-tt / .012)
-                s.ev.add(int((s.clock_i - T0) * SR), pan(x.astype(np.float32) * .55, -.3 if s.clock_i % 2 == 0 else -.2) * g('clock')); s.clock_i += 1
-        if 'purr' in s.L:     # 고양이 골골: 25Hz 떨림 + 숨 들이쉬고 내쉬기
+        if 'clock' in G:
+            while s.clock_i * 1.0 < T1:
+                i0 = int((s.clock_i - T0) * SR); a = gi('clock', i0)
+                if a > 1e-5:
+                    f = 2300 if s.clock_i % 2 == 0 else 1900; k = int(.06 * SR); tt = np.arange(k) / SR
+                    x = (np.sin(2 * np.pi * f * tt) * .6 + np.sin(2 * np.pi * f * 2.3 * tt) * .25 + R.standard_normal(k) * .15 * np.exp(-tt / .003)) * np.exp(-tt / .012)
+                    s.ev.add(i0, pan(x.astype(np.float32) * .55, -.3 if s.clock_i % 2 == 0 else -.2) * a)
+                s.clock_i += 1
+        if live('purr'):
             breath = .5 + .5 * np.sin(2 * np.pi * t / 2.6); inh = (np.sin(2 * np.pi * t / 2.6) > 0)
             pulse = np.clip(np.sin(2 * np.pi * (25 + 3 * inh) * t), 0, 1) ** 3
-            x = s.purr_bp(s.noise(n, .9)) * pulse * (.35 + .65 * breath) * 4.0
-            out += s.purr_lp(x) * g('purr')
-        if 'heart' in s.L:   # 엄마 뱃속: 낮은 '쉬익' + 66bpm 심장 박동
+            out += s.purr_lp(s.purr_bp(s.noise(n, .9)) * pulse * (.35 + .65 * breath) * 4.0) * g('purr')
+        if live('heart'):
             per = 60 / 66; ph = (t % per); imp = np.zeros(n, np.float32)
             idx1 = np.where(np.diff(np.floor(t / per)) > 0)[0]
             imp[idx1] = 1.0; idx2 = np.clip(idx1 + int(.3 * SR), 0, n - 1); imp[idx2] += .62
-            hb = s.heart(imp[None])[0] * 14
-            whoosh = s.heart_lp(br) * (1.6 + .35 * np.exp(-ph / .25))
+            hb = s.heart(imp[None])[0] * 14; whoosh = s.heart_lp(br) * (1.6 + .35 * np.exp(-ph / .25))
             out += (whoosh + np.vstack([hb, hb])) * g('heart')
+        # ---- v3 ASMR
+        if live('leaves'):   # 나뭇잎에 떨어지는 가는 비: 촘촘한 '토독토독' + 잎에서 떨어지는 큰 물방울
+            m = 1 + .2 * np.sin(2 * np.pi * t / 17) + .1 * np.sin(2 * np.pi * t / 5.3)
+            pat = np.zeros((2, n), np.float32)
+            for i, (rf, f) in enumerate(s.leaf_res):
+                imp = (R.random(n) < 70 / SR) * R.exponential(1, n) * R.choice([-1, 1], n)
+                d = rf(imp[None].astype(np.float32))[0] * .35; pat[i % 2] += d; pat[1 - i % 2] += d * .5
+            out += (s.leaf_bp(pk) * .22 * m + pat * m) * g('leaves')
+            for i in np.where(R.random(n) < 1.4 / SR)[0]:
+                s.ev.add(int(i), pan(s.leaf_drip[R.integers(len(s.leaf_drip))] * float(R.uniform(.3, .7)), float(R.uniform(-.8, .8))) * gi('leaves', i))
+        if live('tent'):     # 텐트 천에 떨어지는 비: 낮고 둥근 '투둑투둑'
+            m = 1 + .25 * np.sin(2 * np.pi * t / 29) + .1 * np.sin(2 * np.pi * t / 7.7)
+            th = np.zeros((2, n), np.float32)
+            for i, (rf, f) in enumerate(s.tent_res):
+                imp = (R.random(n) < 45 / SR) * R.exponential(1, n) * R.choice([-1, 1], n)
+                d = rf(imp[None].astype(np.float32))[0] * 1.6; th[i % 2] += d; th[1 - i % 2] += d * .6
+            out += (th * m + s.tent_bp(pk) * .25 * m) * g('tent')
+        if live('underwater'):  # 깊은 물속: 웅웅대는 저음 + 가끔 올라가는 기포
+            sw = 1 + .35 * np.sin(2 * np.pi * t / 11) + .2 * np.sin(2 * np.pi * t / 4.3)
+            out += (s.uw_lp(br) * 7.0 * sw + s.uw_bp(pk) * .12 * sw) * g('underwater')
+        if 'underwater' in G:
+            while s.uw_next < T1:
+                i0 = int((s.uw_next - T0) * SR); a = gi('underwater', i0)
+                if a > 1e-5:
+                    for j in range(int(R.integers(3, 9))):
+                        d = _drip(R, float(R.uniform(300, 700)), float(R.uniform(1.4, 2.2)), float(R.uniform(.05, .1))) * .7
+                        s.ev.add(i0 + int(j * R.uniform(.05, .14) * SR), pan(d, float(R.uniform(-.5, .5))) * a)
+                s.uw_next += float(R.uniform(4, 14))
+        if 'frogs' in G:     # 개구리: 몇 마리가 각자 박자로 개굴개굴, 가끔 다 같이 쉼
+            for j, (per, ph, pn, snd, lv) in enumerate(s.frogs):
+                while s.frog_next[j] < T1:
+                    tt = s.frog_next[j]; i0 = int((tt - T0) * SR); a = gi('frogs', i0)
+                    rest = math.sin(2 * math.pi * tt / 47 + j) > -.4
+                    if a > 1e-5 and rest: s.ev.add(i0, pan(snd * lv * .5 * float(R.uniform(.7, 1.0)), pn) * a)
+                    s.frog_next[j] += per * float(R.uniform(.8, 1.3))
+        if 'owl' in G:
+            while s.owl_next < T1:
+                i0 = int((s.owl_next - T0) * SR); a = gi('owl', i0)
+                if a > 1e-5: s.ev.add(i0, pan(s.owl_snd * .5, float(R.uniform(-.9, .9))) * a)
+                s.owl_next += float(R.uniform(35, 110))
+        if 'bamboo' in G:    # 바람이 불면 대나무가 서로 부딪혀 '딱 딱'
+            while s.bam_next < T1:
+                i0 = int((s.bam_next - T0) * SR); a = gi('bamboo', i0)
+                if a > 1e-5:
+                    tt = 0.0
+                    for j in range(int(R.integers(1, 5))):
+                        s.ev.add(i0 + int(tt * SR), pan(_clack(R) * float(R.uniform(.2, .5)), float(R.uniform(-.8, .8))) * a); tt += float(R.uniform(.15, .7))
+                s.bam_next += float(R.uniform(2.5, 11))
+        if 'pages' in G:
+            while s.page_next < T1:
+                i0 = int((s.page_next - T0) * SR); a = gi('pages', i0)
+                if a > 1e-5: s.ev.add(i0, pan(_page(R) * .5, float(R.uniform(-.3, .3))) * a)
+                s.page_next += float(R.uniform(35, 120))
         out += s.ev.end(); s.t0 += n
         return out
 
@@ -509,10 +809,13 @@ class Ambience:
 # =====================================================================
 # 4) 트랙 만들기 (스트리밍)
 # =====================================================================
-def make_track(path, minutes, style, layers, seed, music_db=0.0, log=print):
-    """style: None(자연음만) / 스타일 이름 / 스타일 이름 목록(곡마다 번갈아). 반환: (RMS dBFS, 곡 정보 목록)"""
-    N = int(minutes * 60 * SR); amb = Ambience(layers, seed) if layers else None
-    ir = make_ir(seed); wf = wave.open(str(path), 'wb'); wf.setnchannels(2); wf.setsampwidth(2); wf.setframerate(SR)
+def make_track(path, minutes, style, layers, seed, music_db=0.0, log=print, scenes=None, seg=90.0, xf=8.0, scene_db=0.0):
+    """style: None(자연음만) / 스타일 이름 / 스타일 이름 목록(곡마다 번갈아).
+    scenes: 영상 장면 목록 — 주면 장면에 맞는 자연음이 화면 전환과 같은 시점에 바뀜 (scene_db=None 이면 끔). 반환: (RMS dBFS, 곡 정보 목록)"""
+    N = int(minutes * 60 * SR)
+    sm = SceneMix(scenes, seg, xf, scene_db) if scenes and scene_db is not None else None
+    amb = Ambience(layers, seed, sm) if (layers or sm) else None
+    ir = make_ir(seed, secs=3.6, t60=3.0); wf = wave.open(str(path), 'wb'); wf.setnchannels(2); wf.setsampwidth(2); wf.setframerate(SR)
     fin, fout = int(10 * SR), int(50 * SR); written = 0; ss = 0.0; songs = []
     mg = 10 ** (music_db / 20); styles = [style] if isinstance(style, str) else list(style or [])
     soft = Filt(signal.butter(1, 11000, 'low', fs=SR, output='sos'))        # 귀에 거슬리는 초고음을 아주 살짝 둥글게
@@ -539,6 +842,7 @@ def make_track(path, minutes, style, layers, seed, music_db=0.0, log=print):
             if len(order) > 1 and k % len(order) == 0 and k: R.shuffle(order)
             S = STYLE[st]; ev, L, info = compose(int(seed * 1000 + k), st); k += 1; info['style'] = st
             x = reverb(render_piece(ev, L), ir, S.get('wet', .32)) * .55 * mg * 10 ** (S.get('gain', 0) / 20)
+            x = widen(x, S.get('width', 1.25))
             need = cur + x.shape[1] - out_pos
             if pend.shape[1] < need: pend = np.hstack([pend, np.zeros((2, need - pend.shape[1]), np.float32)])
             pend[:, cur - out_pos: cur - out_pos + x.shape[1]] += x
@@ -553,3 +857,8 @@ def make_track(path, minutes, style, layers, seed, music_db=0.0, log=print):
     wf.close()
     rms = 10 * math.log10(ss / (2 * N) + 1e-12)
     return rms, songs
+
+
+def widen(x, w=1.25):
+    """스테레오를 살짝 넓혀 소리가 귀를 감싸는 느낌 (가운데·양옆 비율 조절)"""
+    m = (x[0] + x[1]) * .5; sd = (x[0] - x[1]) * .5 * w; return np.vstack([m + sd, m - sd])

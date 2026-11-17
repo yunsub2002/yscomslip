@@ -12,7 +12,8 @@ import audio as A, visual as V, themes as T  # noqa: E402
 FONT = next((p for p in ['/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc', '/usr/share/fonts/opentype/noto/NotoSansCJK-Black.ttc', 'C:/Windows/Fonts/malgunbd.ttf'] if os.path.exists(p)), None)
 NOTE = ['도', '도#', '레', '미♭', '미', '파', '파#', '솔', '라♭', '라', '시♭', '시']
 INST_KO = {'musicbox': '오르골', 'piano': '피아노', 'harp': '하프', 'celesta': '첼레스타', 'kalimba': '칼림바', 'glass': '유리 종', 'vibes': '비브라폰', 'guitar': '나일론 기타',
-           'epiano': '일렉피아노', 'handpan': '핸드팬', 'bowl': '싱잉볼', 'flute': '플루트', 'hum': '허밍', 'choir': '합창', 'strings': '현악'}
+           'epiano': '일렉피아노', 'handpan': '핸드팬', 'bowl': '싱잉볼', 'flute': '플루트', 'hum': '허밍', 'choir': '합창', 'strings': '현악',
+           'felt': '펠트 피아노', 'gayageum': '가야금', 'daegeum': '대금', 'ocarina': '오카리나', 'bell': '벨'}
 
 
 def thumbnail(th, seed, path, vol=None, minutes=60):
@@ -51,12 +52,18 @@ def dur_ko(minutes):
     return (f'{h}시간' if h else '') + (f' {m}분' if m else '') if h else f'{m}분'
 
 
-def yt_text(th, vol, songs, minutes):
+SCENE_KO = {'night': '밤하늘', 'rainwin': '비 오는 창', 'sea': '달빛 바다', 'firefly': '반딧불 숲', 'snow': '눈 오는 밤', 'aurora': '오로라', 'pastel': '파스텔 구름',
+            'warm': '따뜻한 불빛', 'eaves': '한옥 처마', 'storm': '번개 치는 창', 'nursery': '아기 방', 'stream': '달빛 시냇물', 'candle': '촛불', 'study': '늦은 밤 서재',
+            'bamboo': '달빛 대숲', 'pond': '비 오는 연못', 'camp': '별빛 캠핑', 'underwater': '깊은 바닷속', 'meadow': '별 쏟아지는 초원', 'snowwin': '눈 오는 창가', 'tentrain': '텐트 안 빗소리'}
+
+
+def yt_text(th, vol, songs, minutes, seg=90.0):
     title = f"{th['emoji']} {th['name']} {dur_ko(minutes).strip()} | {th['sub']}" + (f' Vol.{vol}' if vol and vol > 1 else '')
     keys = []; seen = set()
     for s in songs:
         nm = NOTE[s['tonic'] % 12]; sc = A.SCALE_KO.get(s.get('scale', 'major'), '장조'); ins = INST_KO.get(s.get('inst'), '')
-        if s.get('meter'): k = f"{ins} {nm} {sc} {s['meter']}/4박자 ♩={s['bpm']}".strip()
+        MODE = {'nocturne': ' 녹턴', 'canon': ' 돌림노래', 'folk': ' 전통 자장가풍'}.get(s.get('mode'), '')
+        if s.get('meter'): k = f"{ins}{MODE} {nm} {sc} {s['meter']}/4박자 ♩={s['bpm']}".strip()
         else: k = f"{ins} {nm} {sc} 앰비언트 (박자 없음)".strip()
         if k.split(' ♩')[0] in seen: continue
         seen.add(k.split(' ♩')[0]); keys.append(k)
@@ -64,7 +71,14 @@ def yt_text(th, vol, songs, minutes):
     for s in songs:
         ko = INST_KO.get(s.get('inst'))
         if ko and ko not in insts: insts.append(ko)
-    music = (f"🎼 이번 영상의 곡: 새로 작곡한 곡 {len(songs)}곡 — {', '.join(keys[:3])} 등\n" + (f"🎻 악기: {' · '.join(insts[:6])}\n" if insts else '')) if songs else ''
+    sc = list(dict.fromkeys(th['scenes']))
+    scene_line = ''
+    if th.get('scene_db', 0.0) is not None and len(sc) > 1:
+        def snd(nm): return '·'.join(A.LAYER_KO[k] for k in sorted(A.SCENE_AMB.get(nm, {}), key=lambda k: -A.SCENE_AMB[nm][k])[:2])
+        steps = [f"{SCENE_KO[x]}({snd(x)})" for x in sc[:4]]
+        m, sx = divmod(int(seg), 60); every = (f'{m}분' if m else '') + (f' {sx}초' if sx else '')
+        scene_line = f"🎧 {every.strip()}마다 장면이 천천히 바뀌고, 그 장면의 소리도 함께 바뀝니다: {' → '.join(steps)}\n"
+    music = scene_line + (f"🎼 이번 영상의 곡: 새로 작곡한 곡 {len(songs)}곡 — {', '.join(keys[:3])} 등\n" + (f"🎻 악기: {' · '.join(insts[:6])}\n" if insts else '')) if songs else ''
     tags = th['tags']
     body = f"""{th['desc']}
 
@@ -81,16 +95,21 @@ def yt_text(th, vol, songs, minutes):
     return title[:100], body, tags
 
 
+XF = 8.0   # 장면 전환 시간(초) — 영상과 소리가 같은 시점에 바뀜
+
+
 def make(theme, seed, minutes, out, vol=None, seg=90.0, log=print):
     th = T.THEMES[theme]; out = Path(out); out.mkdir(parents=True, exist_ok=True); name = f'{theme}_{seed}'
     t0 = time.time()
     log(f'[1/4] 오디오 — {th["name"]} ({minutes}분)')
     wav = out / f'{name}.wav'
-    rms, songs = A.make_track(wav, minutes, th['style'], th['layers'], seed, th.get('music_db', 0.0), log=log)
+    trans = V.pick_transitions(len(th['scenes']), seed)
+    rms, songs = A.make_track(wav, minutes, th['style'], th['layers'], seed, th.get('music_db', 0.0), log=log,
+                              scenes=th['scenes'], seg=seg, xf=XF, scene_db=th.get('scene_db', 0.0))
     gain = max(-12, min(12, -21.0 - rms))                    # 평균 -21dBFS (잔잔하게)
     log(f'      평균 {rms:.1f}dBFS → {gain:+.1f}dB 보정 · 곡 {len(songs)}개 · {time.time() - t0:.0f}초')
     log(f'[2/4] 배경 영상 루프 — {", ".join(th["scenes"])}')
-    loop = out / f'{name}_loop.mp4'; V.make_loop(th['scenes'], seed, str(loop), seg=seg, crf=21 if minutes <= 90 else 24, maxrate='1500k' if minutes <= 90 else '850k')
+    loop = out / f'{name}_loop.mp4'; V.make_loop(th['scenes'], seed, str(loop), seg=seg, xf=XF, trans=trans, crf=21 if minutes <= 90 else 24, maxrate='1500k' if minutes <= 90 else '850k')
     log(f'      루프 {len(th["scenes"]) * seg / 60:.1f}분 · {loop.stat().st_size / 1e6:.0f}MB · {time.time() - t0:.0f}초')
     log('[3/4] 합치기 (영상은 재인코딩 없이 반복)')
     total = minutes * 60; reps = math.ceil(total / (len(th['scenes']) * seg)) + 1
@@ -102,7 +121,7 @@ def make(theme, seed, minutes, out, vol=None, seg=90.0, log=print):
     for x in (wav, loop, lst): x.unlink()
     log('[4/4] 썸네일 · 설명')
     thumb = out / f'{name}_thumb.jpg'; thumbnail(th, seed, thumb, vol, minutes)
-    title, body, tags = yt_text(th, vol, songs, minutes)
+    title, body, tags = yt_text(th, vol, songs, minutes, seg)
     kids = '아동용으로 설정' if th['kids'] else '아동용 아님'
     yt = f"{title}\n\n{body}"
     (out / f'{name}_youtube.txt').write_text(f"{yt}\n\n[태그] {', '.join(tags)}\n[업로드 설정] 시청자층: {kids} · 카테고리: 음악", encoding='utf-8')

@@ -9,7 +9,7 @@ on:
         description: '테마 (auto = 순서대로 돌아가며)'
         type: choice
         default: auto
-        options: [auto, rain_lullaby, brown_noise, humming_lullaby, waves_piano, womb, rain_only, lullaby, fire_piano, white_noise, stream_kalimba, firefly_lullaby, night_guitar, kalimba_lullaby, windchime, thunder_piano, cat_purr, clock_epiano, flute_meditation, snow_harp, singing_bowl]
+        options: [auto, rain_lullaby, brown_noise, humming_lullaby, waves_piano, lotus_gayageum, felt_nocturne, womb, rain_only, lullaby, camping_guitar, meadow_ocarina, fire_piano, white_noise, stream_kalimba, firefly_lullaby, bamboo_daegeum, kalimba_lullaby, deep_sea, night_guitar, tent_rain, windchime, thunder_piano, cat_purr, clock_epiano, flute_meditation, snow_harp, singing_bowl]
       count:
         description: '이번에 만들 편수'
         default: '1'
