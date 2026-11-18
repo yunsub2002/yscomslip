@@ -9,6 +9,7 @@ scene_db: 장면 자연음 전체 크기 조절(dB) / None = 장면 소리 끔(�
          leaves 나뭇잎 빗소리 · tent 텐트 빗소리 · underwater 깊은 물속 · frogs 개구리 · owl 부엉이 · bamboo 대나무 부딪힘 · pages 책장 넘김
   장면: night rainwin storm eaves sea firefly snow aurora pastel warm candle nursery stream study bamboo pond camp underwater meadow snowwin tentrain
 thumb: 썸네일 장면 / kids: 유튜브 '아동용' 권장 여부
+pixel: 도트(드림코어) 테마 — 도트 썸네일, 영문 와이드 제목(en) / 장면 px_train px_city px_room px_clouds px_pool px_street
 """
 THEMES = {
     # ───────── 아기·어린이 (kids=True)
@@ -175,9 +176,55 @@ THEMES = {
         sub='캠핑 빗소리 ASMR · 깊은 잠',
         desc='랜턴 하나 켜 둔 텐트 안, 천 위로 투둑투둑 떨어지는 빗소리. 가끔 멀리서 천둥이 울리고, 비가 그친 사이엔 모닥불과 풀벌레 소리가 들립니다.',
         tags=['텐트 빗소리', '캠핑 빗소리', '빗소리 asmr', '수면 빗소리', '캠핑 asmr', 'rain on tent', '자연의 소리', '수면음악', '백색소음', '천둥소리']),
+    # ───────── 드림코어 도트 (pixel=True: 도트 장면 · 도트 썸네일 · 영문 와이드 제목)
+    'dream_lasttrain': dict(
+        name='퇴근길 막차, 꿈속 드림웨이브', en='ｌａｓｔ　ｔｒａｉｎ　ｈｏｍｅ', short=['ｌａｓｔ　ｔｒａｉｎ　ｈｏｍｅ', '퇴근길 막차에서 잠들기'], emoji='🌃',
+        style=['dreamwave', 'dream_vibes', 'dream_ambient', 'dreamwave'], layers={'vinyl': -20}, pixel=True,
+        scenes=['px_train', 'px_city', 'px_street', 'px_train', 'px_room', 'px_clouds'], thumb='px_train', glow='#ff8fd0', kids=False, scene_db=-2,
+        sub='도트 드림코어 로파이 · 잠들기 전 수면음악',
+        desc='야근 끝, 막차 창밖으로 노을 진 도시가 천천히 지나갑니다. 80년대 신스 패드와 일렉피아노가 오래된 테이프처럼 살짝 울렁이며 흐르고, 덜컹이는 레일 소리에서 비 오는 편의점 거리, 작은 내 방까지 이어지는 꿈속 퇴근길이에요.',
+        tags=['드림코어', 'dreamcore', '로파이', 'lofi', '베이퍼웨이브', 'vaporwave', '신스웨이브', '도트', '픽셀아트', 'pixel art', '퇴근길 음악', '수면음악', '잠잘때 듣는 음악', 'sleep music', 'chill', '시티팝']),
+    'dream_rainroom': dict(
+        name='비 오는 새벽 3시, 내 방 로파이', en='ｍｉｄｎｉｇｈｔ　ｒａｉｎ　ｒｏｏｍ', short=['ｍｉｄｎｉｇｈｔ　ｒａｉｎ', '비 오는 새벽, 내 방'], emoji='🌧️',
+        style=['dream_vibes', 'dream_glass', 'dreamwave', 'dream_ambient'], layers={'vinyl': -16}, pixel=True,
+        scenes=['px_room', 'px_street', 'px_room', 'px_pool', 'px_city', 'px_room'], thumb='px_room', glow='#7fffd0', kids=False, scene_db=-1,
+        sub='빗소리 · LP 잡음 · 도트 로파이 수면음악',
+        desc='창밖엔 비가 내리고 CRT 모니터만 조용히 빛나는 새벽의 작은 방. 고양이는 침대 위에서 잠들었고, LP 잡음과 빗소리 위로 느린 일렉피아노와 비브라폰이 흐릅니다.',
+        tags=['로파이', 'lofi', '빗소리', '드림코어', 'dreamcore', '도트', '픽셀아트', 'pixel art', 'lofi rain', 'LP 잡음', '새벽 감성', '수면음악', '공부할때 듣는 음악', 'sleep music', 'chill beats', '베이퍼웨이브']),
+    'dream_cloudhall': dict(
+        name='구름 복도, 끝나지 않는 꿈', en='ｃｌｏｕｄ　ｈａｌｌｗａｙ', short=['ｃｌｏｕｄ　ｈａｌｌｗａｙ', '끝나지 않는 꿈'], emoji='☁️',
+        style=['dream_glass', 'dream_ambient', 'dreamwave'], layers={'vinyl': -22}, pixel=True,
+        scenes=['px_clouds', 'px_pool', 'px_clouds', 'px_city', 'px_clouds', 'px_train'], thumb='px_clouds', glow='#c9a8ff', kids=False, scene_db=-2,
+        sub='드림코어 · 리미널 스페이스 앰비언트 수면음악',
+        desc='분홍 체크무늬 바닥이 끝없이 이어지는 구름 위 복도, 아무도 없는 밤의 실내 수영장. 어디선가 본 것 같은 낯익은 꿈속 공간에서 유리 종과 신스 패드가 천천히 퍼집니다.',
+        tags=['드림코어', 'dreamcore', '리미널 스페이스', 'liminal space', '앰비언트', 'ambient', '도트', '픽셀아트', 'pixel art', '베이퍼웨이브', 'vaporwave', '수면음악', '명상음악', 'sleep music', '꿈', 'weirdcore']),
+    # ───────── 시티팝 (1980~90년대 일본 버블 · 미국 80년대) — 고해상도 도트 + VHS, 썸네일에 캠코더식 연도
+    'citypop_drive': dict(
+        name='1988 도쿄, 퇴근길 밤의 고속도로', en='ｍｉｄｎｉｇｈｔ　ｄｒｉｖｅ', year='1988.', short=['ｍｉｄｎｉｇｈｔ　ｄｒｉｖｅ', '퇴근길 밤의 고속도로'], emoji='🌃',
+        style=['citypop', 'dreamwave', 'dream_vibes'], layers={'vinyl': -22}, pixel=True,
+        scenes=['cp_drive', 'cp_room', 'cp_drive', 'cp_boulevard'], thumb='cp_drive', glow='#ff4fa0', kids=False, scene_db=-2,
+        sub='시티팝 · 80년대 드림웨이브 수면음악',
+        desc='1988년 도쿄, 야근을 마치고 올라탄 밤의 고속도로. 네온 간판과 붉은 철탑이 창밖으로 흐르고, 카오디오에서는 오래된 카세트가 돌아갑니다. 80년대 신스와 일렉피아노로 새로 작곡한 시티팝풍 수면음악이에요.',
+        tags=['시티팝', 'city pop', '80년대 음악', '1980s', '버블 시대', '베이퍼웨이브', 'vaporwave', '신스웨이브', 'synthwave', '레트로', '드라이브 음악', '퇴근길 음악', '수면음악', 'lofi', 'VHS', '도트']),
+    'citypop_mansion': dict(
+        name='1989 버블 시대, 바닷가 맨션의 노을', en='ｂｕｂｂｌｅ　ｓｕｎｓｅｔ', year='1989.', short=['ｂｕｂｂｌｅ　ｓｕｎｓｅｔ', '바닷가 맨션의 노을'], emoji='🌇',
+        style=['citypop_vibes', 'dream_glass', 'dreamwave'], layers={'vinyl': -18}, pixel=True,
+        scenes=['cp_room', 'cp_boulevard', 'cp_room', 'cp_drive'], thumb='cp_room', glow='#ff9a6a', kids=False, scene_db=-1,
+        sub='시티팝 · 레트로 로파이 · 잠들기 전 음악',
+        desc='1989년, 버블 시대의 바닷가 맨션. 블라인드 사이로 노을빛 줄무늬가 들어오고, 턴테이블 위 레코드와 오디오의 VU 미터가 천천히 흔들립니다. LP 잡음과 함께 듣는 느린 시티팝 수면음악이에요.',
+        tags=['시티팝', 'city pop', '버블 시대', '80년대', '90년대', '레트로', 'retro', '로파이', 'lofi', 'LP', '턴테이블', '노을', '수면음악', 'vaporwave', 'VHS', '도트']),
+    'citypop_miami': dict(
+        name='1986 해변 대로, 야자수와 노을', en='ｏｃｅａｎ　ｂｏｕｌｅｖａｒｄ', year='1986.', short=['ｏｃｅａｎ　ｂｏｕｌｅｖａｒｄ', '야자수와 노을, 해변 대로'], emoji='🌴',
+        style=['dreamwave', 'citypop', 'dream_ambient'], layers={'vinyl': -22}, pixel=True,
+        scenes=['cp_boulevard', 'cp_drive', 'cp_boulevard', 'cp_room'], thumb='cp_boulevard', glow='#ffb050', kids=False, scene_db=-1,
+        sub='80년대 아웃런 · 신스웨이브 수면음악',
+        desc='1986년 여름, 줄무늬 노을 해가 바다로 내려앉는 해변 대로. 야자수가 바람에 흔들리고 호텔 네온이 하나둘 켜집니다. 파도 소리 위로 흐르는 80년대 신스웨이브 수면음악이에요.',
+        tags=['신스웨이브', 'synthwave', '아웃런', 'outrun', '80년대', '1980s', '레트로', 'retrowave', '마이애미', '야자수', '노을', '시티팝', '수면음악', 'vaporwave', 'VHS', '도트']),
 }
 # 아기 테마와 어른 테마가 번갈아 나오도록
 ROTATION = ['rain_lullaby', 'brown_noise', 'humming_lullaby', 'waves_piano', 'lotus_gayageum', 'felt_nocturne', 'womb', 'rain_only', 'lullaby', 'camping_guitar',
             'meadow_ocarina', 'fire_piano', 'white_noise', 'stream_kalimba', 'firefly_lullaby', 'bamboo_daegeum', 'kalimba_lullaby', 'deep_sea',
-            'night_guitar', 'tent_rain', 'windchime', 'thunder_piano', 'cat_purr', 'clock_epiano', 'flute_meditation', 'snow_harp', 'singing_bowl']
-assert set(ROTATION) == set(THEMES) and len(ROTATION) == len(THEMES)
+            'night_guitar', 'tent_rain', 'windchime', 'citypop_drive', 'thunder_piano', 'cat_purr', 'clock_epiano', 'citypop_mansion', 'flute_meditation', 'snow_harp', 'singing_bowl', 'citypop_miami']
+DREAM3 = ['dream_lasttrain', 'dream_rainroom', 'dream_cloudhall']          # 320 도트 드림코어 (자동 순서에서는 뺌, 직접 고를 때만)
+CITYPOP3 = ['citypop_drive', 'citypop_mansion', 'citypop_miami']
+assert set(ROTATION) | set(DREAM3) == set(THEMES) and len(ROTATION) == len(set(ROTATION))

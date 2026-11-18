@@ -94,6 +94,10 @@ SUS = {
     'pad':     dict(att=1.4, rel=2.5, vib=(4.3, .0018, 0), gain=.16, voices=4),
     'ocarina': dict(att=.09, rel=.25, vib=(5.0, .003, .4), gain=.3, harm=[1, .06, .1, .02], breath=.014),
     'daegeum': dict(att=.14, rel=.35, vib=(4.8, .008, .55), gain=.3, harm=[1, .55, .32, .2, .12, .07], breath=.045, scoop=-.012, buzz=.18),
+    # 드림웨이브 (80년대 아날로그 신스 느낌): 톱니파를 둥글게 깎은 패드 · 부드러운 사각파 리드 · 서브 베이스
+    'synth':     dict(att=1.6, rel=3.0, vib=(.35, .0016, 0), gain=.15, voices=4, det=[-9, 9, -3, 4], harm=[1 / h * max(0, 1 - (h - 1) / 12) ** 1.4 for h in range(1, 13)]),
+    'synthlead': dict(att=.22, rel=.9, vib=(4.8, .0042, .6), gain=.2, voices=2, det=[-4, 4], harm=[1, 0, .28, 0, .12, 0, .05]),
+    'sub':       dict(att=.25, rel=.8, vib=(1.0, 0, 0), gain=.3, harm=[1, .06]),
 }
 _SUS = {}
 
@@ -106,7 +110,7 @@ def sus_note(ins, m, dur):
     vf, vd, vdelay = P['vib']; vib = 1 + vd * np.sin(2 * np.pi * vf * t + rng.uniform(0, 6.28)) * np.clip((t - vdelay) / .6, 0, 1)
     voices = P.get('voices', 1)
     for vi in range(voices):
-        cents = 0 if voices == 1 else [-6, 6, 0, 3][vi]; ch = vi % 2 if voices > 1 else None
+        cents = 0 if voices == 1 else P.get('det', [-6, 6, 0, 3])[vi]; ch = vi % 2 if voices > 1 else None
         f = f0 * 2 ** (cents / 1200); drift = 1 + .004 * np.exp(-t / .12) * (1 if ins == 'flute' else 0) + P.get('scoop', 0) * np.exp(-t / .09)
         ph = 2 * np.pi * f * np.cumsum(vib * drift) / SR
         y = np.zeros(n, np.float32)
@@ -183,6 +187,12 @@ STYLE = {
     'ocean_ambient': dict(mode='ambient', voices=['glass', 'bell', 'choir', 'handpan', 'pad'], drone='choir', scales=['lydian', 'penta'], wet=.6),
     'kalimba_ambient': dict(mode='ambient', voices=['kalimba', 'kalimba', 'glass', 'pad', 'flute'], drone='pad', scales=['penta'], wet=.45),
     # --- drone: 선법 드론 위에 자유 박자 선율 (명상)
+    'dreamwave':     dict(mode='dream', pad='synth', padv=.75, keys='epiano', keysv=.3, mel='synthlead', melv=.28, meld=.55, bpm=(60, 70), scales=['major', 'lydian', 'major'], wet=.5, width=1.45, tape=True, gain=-1.0),
+    'dream_vibes':   dict(mode='dream', pad='synth', padv=.7, keys='epiano', keysv=.28, mel='vibes', melv=.3, meld=.6, bpm=(58, 66), scales=['major', 'dorian'], wet=.52, width=1.45, tape=True, gain=-1.0),
+    'dream_glass':   dict(mode='dream', pad='synth', padv=.8, keys='epiano', keysv=.24, mel='glass', melv=.26, meld=.5, bpm=(54, 62), scales=['lydian', 'major'], wet=.58, width=1.5, tape=True, gain=-1.5),
+    'citypop':       dict(mode='dream', pad='synth', padv=.68, keys='epiano', keysv=.34, mel='synthlead', melv=.3, meld=.7, bpm=(64, 74), scales=['major', 'lydian'], wet=.46, width=1.4, tape=True, gain=-1.0),
+    'citypop_vibes': dict(mode='dream', pad='synth', padv=.66, keys='epiano', keysv=.32, mel='vibes', melv=.32, meld=.7, bpm=(62, 72), scales=['major', 'mixo'], wet=.48, width=1.4, tape=True, gain=-1.0),
+    'dream_ambient': dict(mode='ambient', voices=['epiano', 'glass', 'synthlead', 'epiano', 'vibes'], drone='synth', scales=['lydian', 'major'], wet=.58, width=1.5, tape=True),
     'flute_drone': dict(mode='drone', mel='flute', drone='strings', chord='choir', scales=['dorian', 'mixo', 'lydian'], wet=.5),
     'hum_drone':   dict(mode='drone', mel='hum', drone='choir', chord='pad', scales=['dorian', 'major'], wet=.5),
     'bowl_drone':  dict(mode='drone', mel='bowl', drone='choir', chord='strings', scales=['mpenta', 'dorian'], wet=.55),
@@ -467,7 +477,56 @@ def compose_drone(seed, S):
     return ev, L, dict(tonic=tonic + 12, bpm=0, meter=0, scale=sc_name, mode='drone', inst=mel)
 
 
-COMPOSE = {'song': compose_song, 'arp': compose_arp, 'ambient': compose_ambient, 'drone': compose_drone, 'nocturne': compose_nocturne, 'canon': compose_canon, 'folk': compose_folk}
+DREAM_PROGS = [[4, 3, 6, 1], [1, 6, 4, 5], [4, 5, 3, 6], [2, 5, 1, 6], [6, 4, 1, 5], [4, 3, 2, 5], [1, 3, 4, 4], [6, 5, 4, 3]]
+
+
+def compose_dream(seed, S):
+    """드림웨이브·시티팝풍 수면곡: 7화음(가끔 9화음)을 2마디씩 길게 — 신스 패드 + 일렉피아노 반주 + 서브 베이스,
+    두 번째 반복부터 드문드문 긴 선율. 북·드럼 없음 (잠들기 좋게)"""
+    R = np.random.default_rng(seed); sc_name = str(R.choice(S['scales'])); SC = SCALES[sc_name]
+    tonic = _tonic(R); bpm = float(R.uniform(*S['bpm'])); beat = 60 / bpm; bar = 4 * beat
+    P = [int(x) for x in DREAM_PROGS[R.integers(len(DREAM_PROGS))]]
+    reps = int(S.get('reps', 4)); intro = 2; body = len(P) * 2 * reps; total = intro + body + 3
+    tone = lambda ix, base: base + SC[ix % 7] + 12 * (ix // 7)
+    hum = lambda: float(R.normal(0, .012)); sw = .07 * beat; ev = []; mp = 9; pat = None
+    PATS = [[(0, (0, 1, 2)), (1.5, (2, 3)), (3, (1, 3))], [(0, (1, 3)), (2.5, (2, 3))], [(.5, (0, 2, 3)), (2, (3,)), (3.5, (2,))], [(0, (0, 2)), (1, (3,)), (2.5, (1, 2))]]
+    for b in range(intro + body):
+        t0 = b * bar
+        if b < intro: deg, first, rep = P[0], b == 0, -1
+        else: deg = P[((b - intro) // 2) % len(P)]; first = (b - intro) % 2 == 0; rep = (b - intro) // (len(P) * 2)
+        r = deg - 1; vo = [r, r + 2, r + 4, r + 6] + ([r + 8] if R.random() < .35 else [])
+        if first:
+            for j, ix in enumerate(vo): ev.append((t0, S['pad'], tone(ix, tonic - 12), S['padv'] * (1.0 if j == 0 else .8), float((j - 2) * .25), bar * 2 * .98))
+            if b >= intro or b == 0: ev.append((t0, 'sub', tonic - 24 + SC[r % 7], S.get('subv', .6), 0.0, bar * 2 * .94))
+        if b >= 1:
+            pat = PATS[int(R.integers(len(PATS)))] if first or pat is None or R.random() < .5 else pat
+            for on, ks in pat:
+                for k in ks:
+                    if k < len(vo): ev.append((t0 + on * beat + (sw if on % 1 else 0) + hum(), S['keys'], tone(vo[k], tonic), S.get('keysv', .3) * float(R.uniform(.78, 1.04)), (-.35, .35)[k % 2], None))
+        if rep >= 1 and S.get('mel') and R.random() < S.get('meld', .6):
+            for on in sorted(R.choice([0, 1, 1.5, 2, 2.5, 3], int(R.choice([1, 2, 2, 3])), replace=False)):
+                cands = [x + 7 for x in vo] + [r + 8, r + 12]
+                mp = min(cands, key=lambda c: abs(c - mp) + R.uniform(0, 2.2)); d = (4 - on) * beat * float(R.uniform(.55, 1.0))
+                if S['mel'] in SUS: ev.append((t0 + on * beat + hum(), S['mel'], tone(mp, tonic), S.get('melv', .3), .2, d))
+                else: ev.append((t0 + on * beat + hum(), S['mel'], tone(mp, tonic), S.get('melv', .35), .2, None))
+    tE = (intro + body) * bar                                               # 끝: 으뜸 7화음을 길게
+    for j, ix in enumerate((0, 2, 4, 6, 8)): ev.append((tE, S['pad'], tone(ix, tonic - 12), S['padv'] * .8, float((j - 2) * .25), bar * 2.6))
+    ev.append((tE, 'sub', tonic - 24, S.get('subv', .6) * .8, 0.0, bar * 2.4))
+    for j, ix in enumerate((0, 4, 6, 9)): ev.append((tE + j * .22, S['keys'], tone(ix, tonic), .24, (-.3, .3)[j % 2], None))
+    return ev, total * bar, dict(tonic=tonic, bpm=round(bpm), meter=4, scale=sc_name, mode='dream', inst=S['keys'], insts=[S['keys'], S['pad'], S.get('mel'), 'sub'])
+
+
+def tape(x, seed, depth=.0024, rate=.29, fl=.00016, frate=5.1, lp=6800):
+    """카세트테이프 느낌: 느린 음정 울렁임(wow) + 미세한 떨림(flutter) + 살짝 둥근 고음 + 부드러운 포화"""
+    n = x.shape[1]; t = np.arange(n) / SR; R = np.random.default_rng(seed)
+    d = depth * SR * .5 * (1 + np.sin(2 * np.pi * rate * t + R.uniform(0, 6.28)) * (.7 + .3 * np.sin(2 * np.pi * .043 * t))) + fl * SR * np.sin(2 * np.pi * frate * t)
+    idx = np.clip(np.arange(n) - d, 0, n - 1); base = np.arange(n)
+    y = np.vstack([np.interp(idx, base, x[c]) for c in range(2)]).astype(np.float32)
+    y = signal.sosfilt(bw('low', lp), y, axis=-1).astype(np.float32)
+    return (np.tanh(y * 1.15) / 1.15).astype(np.float32)
+
+
+COMPOSE = {'dream': compose_dream, 'song': compose_song, 'arp': compose_arp, 'ambient': compose_ambient, 'drone': compose_drone, 'nocturne': compose_nocturne, 'canon': compose_canon, 'folk': compose_folk}
 
 
 def compose(seed, style):
@@ -547,11 +606,12 @@ class Events:
 # CAL: 0dB = 음악과 같은 크기(약 -20dBFS)가 되도록 하는 보정값 (dB)
 CAL = {'rain': -4.2, 'waves': 1.3, 'pink': 8.7, 'brown': -8.8, 'white': 11.6, 'heart': -12.7, 'fire': -10.9,
        'drips': -9.5, 'thunder': -10.0, 'stream': -20.5, 'wind': -13.5, 'chimes': 3.0, 'crickets': 29.5, 'clock': -3.0, 'purr': -2.7,
-       'leaves': 5.5, 'tent': 3.6, 'underwater': -29.7, 'frogs': -4.0, 'owl': -2.0, 'bamboo': -7.0, 'pages': -11.0}
+       'leaves': 5.5, 'tent': 3.6, 'underwater': -29.7, 'frogs': -4.0, 'owl': -2.0, 'bamboo': -7.0, 'pages': -11.0,
+       'vinyl': -7.9, 'city': -18.8, 'train': -22.6}
 LAYER_KO = {'rain': '빗소리', 'drips': '처마 빗방울', 'thunder': '먼 천둥', 'waves': '파도', 'stream': '시냇물', 'wind': '바람', 'chimes': '풍경',
             'crickets': '귀뚜라미', 'fire': '장작', 'clock': '괘종시계', 'purr': '고양이 골골', 'pink': '핑크 노이즈', 'brown': '브라운 노이즈',
             'white': '백색소음', 'heart': '심장 박동', 'leaves': '나뭇잎 빗소리', 'tent': '텐트 빗소리', 'underwater': '깊은 물속', 'frogs': '개구리',
-            'owl': '부엉이', 'bamboo': '대나무 부딪힘', 'pages': '책장 넘김'}
+            'owl': '부엉이', 'bamboo': '대나무 부딪힘', 'pages': '책장 넘김', 'vinyl': 'LP 잡음', 'city': '먼 도시 소리', 'train': '기차 소리'}
 PINK_B, PINK_A = [0.049922035, -0.095993537, 0.050612699, -0.004408786], [1, -2.494956002, 2.017265875, -0.522189400]
 PENTA_CHIME = [0, 2, 4, 7, 9, 12, 14, 16]
 
@@ -563,6 +623,9 @@ SCENE_AMB = {
     'study': {'clock': -14, 'pages': -8, 'rain': -22}, 'bamboo': {'wind': -13, 'bamboo': -7, 'leaves': -18}, 'pond': {'leaves': -9, 'frogs': -15, 'drips': -14},
     'camp': {'fire': -10, 'crickets': -21, 'owl': -14}, 'underwater': {'underwater': -6}, 'meadow': {'wind': -16, 'crickets': -18, 'owl': -17},
     'snowwin': {'wind': -20, 'fire': -21, 'clock': -28}, 'tentrain': {'tent': -5, 'thunder': -16},
+    'px_train': {'train': -9, 'city': -26}, 'px_city': {'city': -15, 'wind': -24}, 'px_room': {'rain': -12, 'vinyl': -18},
+    'px_clouds': {'wind': -22, 'chimes': -22}, 'px_pool': {'drips': -15, 'underwater': -22}, 'px_street': {'rain': -8, 'city': -21},
+    'cp_room': {'city': -21, 'vinyl': -15}, 'cp_drive': {'brown': -14, 'wind': -24, 'city': -24}, 'cp_boulevard': {'waves': -11, 'wind': -24},
 }
 
 
@@ -653,6 +716,11 @@ class Ambience:
         s.frog_next = [f[1] for f in s.frogs]
         s.owl_next = float(R.uniform(20, 50)); s.owl_snd = _owl(R)
         s.bam_next = float(R.uniform(2, 6)); s.page_next = float(R.uniform(15, 40))
+        # v4 드림코어: LP 잡음 · 먼 도시 · 기차
+        s.vin_hiss = Filt(bw('band', [1800, 9000])); s.vin_click = Filt(bw('band', [700, 5000]), ch=1); s.vin_lo = Filt(bw('low', 120))
+        s.city_lo = Filt(bw('band', [40, 260])); s.city_mid = Filt(bw('band', [250, 900])); s.car_next = float(R.uniform(3, 12))
+        s.train_lo = Filt(bw('band', [30, 160])); s.train_mid = Filt(bw('band', [180, 700])); s.train_next = 0.4; s.train_k = 0
+        s.thump = [Filt(bw('low', float(f)), ch=1) for f in (180, 240)]
 
     def noise(s, n, corr=.55):  # 좌우가 약간 다른 자연스러운 스테레오 노이즈
         a = s.R.standard_normal(n).astype(np.float32); b = s.R.standard_normal((2, n)).astype(np.float32)
@@ -802,6 +870,34 @@ class Ambience:
                 i0 = int((s.page_next - T0) * SR); a = gi('pages', i0)
                 if a > 1e-5: s.ev.add(i0, pan(_page(R) * .5, float(R.uniform(-.3, .3))) * a)
                 s.page_next += float(R.uniform(35, 120))
+        if live('vinyl'):    # LP판: 아주 작은 쉬- 소리 + 톡톡 튀는 먼지 소리 + 느린 회전 웅웅
+            hiss = s.vin_hiss(s.noise(n, .85)) * .035 * (1 + .15 * np.sin(2 * np.pi * t / 1.8))
+            imp = (R.random(n) < 9 / SR) * R.exponential(1, n) ** 2 * R.choice([-1, 1], n) + (R.random(n) < .3 / SR) * R.exponential(3, n) * R.choice([-1, 1], n)
+            c = s.vin_click(imp[None].astype(np.float32))[0] * .55; rum = s.vin_lo(br) * .8 * (1 + .3 * np.sin(2 * np.pi * .555 * t))
+            out += (hiss + np.vstack([c, c * .75]) + rum) * g('vinyl')
+        if live('city'):     # 먼 도시: 낮은 웅웅거림 + 가끔 멀리 지나가는 차
+            out += (s.city_lo(br) * 3.2 * (1 + .18 * np.sin(2 * np.pi * t / 29)) + s.city_mid(pk) * .07 * (1 + .25 * np.sin(2 * np.pi * t / 11))) * g('city')
+        if 'city' in G:
+            while s.car_next < T1:
+                i0 = int((s.car_next - T0) * SR); a_ = gi('city', i0)
+                if a_ > 1e-5:
+                    d = float(R.uniform(4, 8)); k = int(d * SR); tt = np.arange(k) / SR; e = np.sin(np.pi * tt / d) ** 3
+                    x = signal.sosfilt(bw('band', [float(R.uniform(250, 400)), float(R.uniform(1400, 2600))]), R.standard_normal(k)).astype(np.float32) * e.astype(np.float32) * .35
+                    ang = (np.linspace(0, 1, k) if R.random() < .5 else np.linspace(1, 0, k)) * np.pi / 2
+                    s.ev.add(i0, np.vstack([x * np.cos(ang), x * np.sin(ang)]).astype(np.float32) * a_)
+                s.car_next += float(R.uniform(6, 22))
+        if live('train'):    # 달리는 기차: 낮은 진동 + 바퀴 소리
+            out += (s.train_lo(br) * 5.0 * (1 + .12 * np.sin(2 * np.pi * .9 * t)) + s.train_mid(pk) * .09 * (1 + .2 * np.sin(2 * np.pi * t / 7))) * g('train')
+        if 'train' in G:     # 레일 이음새: '덜-컹' 두 번씩, 일정한 간격
+            while s.train_next < T1:
+                i0 = int((s.train_next - T0) * SR); a_ = gi('train', i0)
+                if a_ > 1e-5:
+                    for j, off in enumerate((0.0, .14)):
+                        k = int(.12 * SR); tt = np.arange(k) / SR
+                        x = (np.sin(2 * np.pi * 62 * tt) * .9 + R.standard_normal(k) * .5) * np.exp(-tt / .035)
+                        x = s.thump[j](x[None].astype(np.float32))[0] * (.9 if j == 0 else .75) * (1.15 if s.train_k % 4 == 0 else 1.0)
+                        s.ev.add(i0 + int(off * SR), pan(x.astype(np.float32), -.15 + .3 * j) * a_)
+                s.train_k += 1; s.train_next += 1.08 + float(R.uniform(-.015, .015))
         out += s.ev.end(); s.t0 += n
         return out
 
@@ -842,6 +938,7 @@ def make_track(path, minutes, style, layers, seed, music_db=0.0, log=print, scen
             if len(order) > 1 and k % len(order) == 0 and k: R.shuffle(order)
             S = STYLE[st]; ev, L, info = compose(int(seed * 1000 + k), st); k += 1; info['style'] = st
             x = reverb(render_piece(ev, L), ir, S.get('wet', .32)) * .55 * mg * 10 ** (S.get('gain', 0) / 20)
+            if S.get('tape'): x = tape(x, int(seed * 7 + k))
             x = widen(x, S.get('width', 1.25))
             need = cur + x.shape[1] - out_pos
             if pend.shape[1] < need: pend = np.hstack([pend, np.zeros((2, need - pend.shape[1]), np.float32)])

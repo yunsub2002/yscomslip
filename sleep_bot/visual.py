@@ -917,6 +917,16 @@ class TentRain(Scene):   # 텐트 안에서 듣는 빗소리: 랜턴 불빛, 천
 SCENES = {'night': Night, 'rainwin': RainWin, 'sea': Sea, 'firefly': Firefly, 'snow': Snow, 'aurora': Aurora, 'pastel': Pastel, 'warm': Warm,
           'eaves': Eaves, 'storm': Storm, 'nursery': Nursery, 'stream': Stream, 'candle': Candle, 'study': Study,
           'bamboo': Bamboo, 'pond': Pond, 'camp': Camp, 'underwater': Underwater, 'meadow': Meadow, 'snowwin': SnowWin, 'tentrain': TentRain}
+import pixel as _PX                                                    # 드림코어 도트 장면 6종 (pixel.py)
+SCENES.update(_PX.PX_SCENES)
+import citypop as _CP                                                  # 시티팝(80~90년대) 고해상도 도트 + VHS (citypop.py)
+SCENES.update(_CP.CP_SCENES)
+
+
+def is_vhs(name): return getattr(SCENES[name], 'CITYPOP', False)
+
+
+def is_pixel(name): return getattr(SCENES[name], 'PIXEL', False)
 
 
 # ----------------------------------------------------------------------------- 후처리 · 인코딩
@@ -988,18 +998,24 @@ def transition(kind, fa, fb, u):
 
 
 def render_segment(args):
-    """장면 k (seg초) — 끝 xf초 동안 정해진 전환 효과로 다음 장면으로 바뀜. 파일 하나로 인코딩"""
+    """장면 k (seg초) — 끝 xf초 동안 정해진 전환 효과로 다음 장면으로 바뀜. 파일 하나로 인코딩
+    도트 장면끼리는 그레인·카메라 이동 없이 픽셀을 각지게(neighbor) 키움 → 1920x1080 에서 정확히 6배 도트"""
     k, names, seed, seg, xf, out, crf, maxrate = args[:8]; kind = args[8] if len(args) > 8 else 'dissolve'
     a = SCENES[names[k]](seed + k * 101); b = SCENES[names[(k + 1) % len(names)]](seed + ((k + 1) % len(names)) * 101)
-    grains = _grain(seed + k); n = int(round(seg * FPS)); T = seg * len(names)
-    ff = subprocess.Popen(['ffmpeg', '-y', '-loglevel', 'error', '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-s', f'{CW}x{CH}', '-r', str(FPS), '-i', '-',
-                           '-vf', 'scale=1920:1080:flags=lanczos', '-c:v', 'libx264', '-preset', 'medium', '-crf', str(crf), '-x264-params', 'aq-mode=3:keyint=96:min-keyint=96', '-maxrate', maxrate, '-bufsize', '3000k',
+    pix = is_pixel(names[k]) and is_pixel(names[(k + 1) % len(names)])
+    grains = None if pix else _grain(seed + k); n = int(round(seg * FPS)); T = seg * len(names)
+    size = f'{W}x{H}' if pix else f'{CW}x{CH}'; flt = 'scale=1920:1080:flags=neighbor' if pix else 'scale=1920:1080:flags=lanczos'
+    ff = subprocess.Popen(['ffmpeg', '-y', '-loglevel', 'error', '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-s', size, '-r', str(FPS), '-i', '-',
+                           '-vf', flt, '-c:v', 'libx264', '-preset', 'medium', '-crf', str(crf), '-x264-params', 'aq-mode=3:keyint=96:min-keyint=96', '-maxrate', maxrate, '-bufsize', '3000k',
                            '-pix_fmt', 'yuv420p', '-an', out], stdin=subprocess.PIPE)
+    if pix and kind in ('zoom', 'blur'): kind = 'dissolve'                    # 도트가 뭉개지는 전환은 쓰지 않음
     for i in range(n):
         t = i / FPS; f = a.frame(t)
         if t > seg - xf:
             u = (t - (seg - xf)) / xf; u = u * u * (3 - 2 * u); f = transition(kind, f, b.frame(t - seg), u)
-        f = grade(f, grains[i % len(grains)]); f = camera(f, (k * seg + t) / T)
+        if pix and is_vhs(names[k]): f = _CP.vhs(f, k * seg + t, seed)
+        elif pix: f = _PX.grade_px(f)
+        else: f = grade(f, grains[i % len(grains)]); f = camera(f, (k * seg + t) / T)
         ff.stdin.write((np.clip(f, 0, 1) * 255).astype(np.uint8).tobytes())
     ff.stdin.close(); ff.wait(); return out
 
@@ -1025,4 +1041,6 @@ def make_loop(names, seed, path, seg=90.0, xf=8.0, crf=21, procs=None, maxrate='
 
 
 def still(name, seed, t=20.0):
+    if is_vhs(name): return _CP.vhs(SCENES[name](seed).frame(t), 1.0, seed)
+    if is_pixel(name): return _PX.grade_px(SCENES[name](seed).frame(t))
     f = grade(SCENES[name](seed).frame(t), 0.0); return np.clip(camera(f, .3), 0, 1)

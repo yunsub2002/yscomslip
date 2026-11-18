@@ -6,12 +6,12 @@ on:
   workflow_dispatch:
     inputs:
       theme:
-        description: '테마 (auto = 순서대로 돌아가며)'
+        description: '테마 (auto = 순서대로 · citypop3 = 시티팝 3편 · dream3 = 드림코어 도트 3편)'
         type: choice
         default: auto
-        options: [auto, rain_lullaby, brown_noise, humming_lullaby, waves_piano, lotus_gayageum, felt_nocturne, womb, rain_only, lullaby, camping_guitar, meadow_ocarina, fire_piano, white_noise, stream_kalimba, firefly_lullaby, bamboo_daegeum, kalimba_lullaby, deep_sea, night_guitar, tent_rain, windchime, thunder_piano, cat_purr, clock_epiano, flute_meditation, snow_harp, singing_bowl]
+        options: [auto, citypop3, citypop_drive, citypop_mansion, citypop_miami, dream3, dream_lasttrain, dream_rainroom, dream_cloudhall, rain_lullaby, brown_noise, humming_lullaby, waves_piano, lotus_gayageum, felt_nocturne, womb, rain_only, lullaby, camping_guitar, meadow_ocarina, fire_piano, white_noise, stream_kalimba, firefly_lullaby, bamboo_daegeum, kalimba_lullaby, deep_sea, night_guitar, tent_rain, windchime, thunder_piano, cat_purr, clock_epiano, flute_meditation, snow_harp, singing_bowl]
       count:
-        description: '이번에 만들 편수'
+        description: '이번에 만들 편수 (citypop3·dream3 는 자동으로 3편)'
         default: '1'
       minutes:
         description: '영상 길이(분) — auto = 2시간·3시간 번갈아'
@@ -27,7 +27,7 @@ concurrency:
 jobs:
   make:
     runs-on: ubuntu-latest
-    timeout-minutes: 240
+    timeout-minutes: 350
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
