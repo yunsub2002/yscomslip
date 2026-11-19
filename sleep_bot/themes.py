@@ -220,6 +220,23 @@ THEMES = {
         sub='80년대 아웃런 · 신스웨이브 수면음악',
         desc='1986년 여름, 줄무늬 노을 해가 바다로 내려앉는 해변 대로. 야자수가 바람에 흔들리고 호텔 네온이 하나둘 켜집니다. 파도 소리 위로 흐르는 80년대 신스웨이브 수면음악이에요.',
         tags=['신스웨이브', 'synthwave', '아웃런', 'outrun', '80년대', '1980s', '레트로', 'retrowave', '마이애미', '야자수', '노을', '시티팝', '수면음악', 'vaporwave', 'VHS', '도트']),
+    # ───────── 비 오는 80~90년대 도시 — 채널 주인이 준 그림 그대로 + 비만 내림 (rainimg.py · assets/rain_*.png)
+    'rain_tokyo1989': dict(
+        name='1989 도쿄, 비 오는 퇴근길', en='ｔｏｋｙｏ　ｒａｉｎ　１９８９', year='平成元年', short=['ｔｏｋｙｏ　ｒａｉｎ　１９８９', '비 오는 신주쿠 퇴근길'], emoji='🌧️',
+        style=['dream_vibes', 'citypop', 'dream_glass', 'dreamwave'], layers={'vinyl': -22}, pixel=True,
+        thumb_file='rain_crt.png', thumb_text=False, minutes=154,                     # 썸네일 브라운관 속 '♪ 2:34:01' 과 같은 길이
+        scenes=['img_shinjuku', 'img_office_street', 'img_shinjuku', 'img_office_street'], thumb='img_shinjuku', glow='#ff4f7a', kids=False, scene_db=-1,
+        sub='비 오는 시티팝 · 드림코어 로파이 수면음악',
+        desc='1989년, 헤이세이가 막 시작된 도쿄. 네온 간판이 빛나는 신주쿠 거리와 오래된 오피스 골목에 밤비가 조용히 내립니다. 빗소리와 함께 흐르는 80년대 신스·일렉피아노 드림코어 수면음악입니다.',
+        tags=['시티팝', 'city pop', '드림코어', 'dreamcore', '빗소리', 'rain', '80년대', '1989', '도쿄', '신주쿠', '로파이', 'lofi', '베이퍼웨이브', 'vaporwave', '도트', '픽셀아트', 'pixel art', '수면음악', 'sleep music', 'VHS']),
+    'rain_ny1985': dict(
+        name='1985 뉴욕에서 LA까지, 비 오는 밤', en='ｒａｉｎｙ　ｎｉｇｈｔ　１９８５', year='1985.', short=['ｒａｉｎｙ　ｎｉｇｈｔ　１９８５', '비 오는 밤, 맨해튼과 LA'], emoji='🌃',
+        style=['dreamwave', 'dream_ambient', 'citypop_vibes', 'dream_vibes'], layers={'vinyl': -22}, pixel=True,
+        thumb_file='rain_la_main.png',
+        scenes=['img_la_main', 'img_manhattan', 'img_la_sunset', 'img_manhattan'], thumb='img_la_main', glow='#4ae0ff', kids=False, scene_db=-1,
+        sub='80년대 신스웨이브 · 빗소리 드림코어 수면음악',
+        desc='1985년, 비 내리는 LA 거리의 네온과 트렌치코트, 창밖으로 비가 내리는 맨해튼의 오래된 사무실, 그리고 노을 속 야자수. 빗소리 위로 흐르는 80년대 신스웨이브 드림코어 수면음악입니다.',
+        tags=['신스웨이브', 'synthwave', '드림코어', 'dreamcore', '빗소리', 'rain', '80년대', '1985', '뉴욕', '맨해튼', 'LA', '로스앤젤레스', '레트로', 'retrowave', '로파이', 'lofi', '도트', '픽셀아트', '수면음악', 'VHS']),
 }
 # 아기 테마와 어른 테마가 번갈아 나오도록
 ROTATION = ['rain_lullaby', 'brown_noise', 'humming_lullaby', 'waves_piano', 'lotus_gayageum', 'felt_nocturne', 'womb', 'rain_only', 'lullaby', 'camping_guitar',
@@ -227,4 +244,5 @@ ROTATION = ['rain_lullaby', 'brown_noise', 'humming_lullaby', 'waves_piano', 'lo
             'night_guitar', 'tent_rain', 'windchime', 'citypop_drive', 'thunder_piano', 'cat_purr', 'clock_epiano', 'citypop_mansion', 'flute_meditation', 'snow_harp', 'singing_bowl', 'citypop_miami']
 DREAM3 = ['dream_lasttrain', 'dream_rainroom', 'dream_cloudhall']          # 320 도트 드림코어 (자동 순서에서는 뺌, 직접 고를 때만)
 CITYPOP3 = ['citypop_drive', 'citypop_mansion', 'citypop_miami']
-assert set(ROTATION) | set(DREAM3) == set(THEMES) and len(ROTATION) == len(set(ROTATION))
+RAIN2 = ['rain_tokyo1989', 'rain_ny1985']                                 # 비 오는 80~90년대 도시 (직접 고를 때만)
+assert set(ROTATION) | set(DREAM3) | set(RAIN2) == set(THEMES) and len(ROTATION) == len(set(ROTATION))

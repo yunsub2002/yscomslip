@@ -921,12 +921,17 @@ import pixel as _PX                                                    # 드림�
 SCENES.update(_PX.PX_SCENES)
 import citypop as _CP                                                  # 시티팝(80~90년대) 고해상도 도트 + VHS (citypop.py)
 SCENES.update(_CP.CP_SCENES)
+import rainimg as _RI                                                  # 채널 주인이 준 그림(assets) 위에 비만 내리는 장면 (rainimg.py)
+SCENES.update(_RI.IMG_SCENES)
 
 
 def is_vhs(name): return getattr(SCENES[name], 'CITYPOP', False)
 
 
 def is_pixel(name): return getattr(SCENES[name], 'PIXEL', False)
+
+
+def is_raw(name): return getattr(SCENES[name], 'RAW', False)          # 그림 그대로 (색 보정·VHS 없음)
 
 
 # ----------------------------------------------------------------------------- 후처리 · 인코딩
@@ -1004,7 +1009,8 @@ def render_segment(args):
     a = SCENES[names[k]](seed + k * 101); b = SCENES[names[(k + 1) % len(names)]](seed + ((k + 1) % len(names)) * 101)
     pix = is_pixel(names[k]) and is_pixel(names[(k + 1) % len(names)])
     grains = None if pix else _grain(seed + k); n = int(round(seg * FPS)); T = seg * len(names)
-    size = f'{W}x{H}' if pix else f'{CW}x{CH}'; flt = 'scale=1920:1080:flags=neighbor' if pix else 'scale=1920:1080:flags=lanczos'
+    raw = is_raw(names[k])
+    size = f'{W}x{H}' if pix else f'{CW}x{CH}'; flt = 'scale=1920:1080:flags=neighbor' if pix and not raw else 'scale=1920:1080:flags=lanczos'
     ff = subprocess.Popen(['ffmpeg', '-y', '-loglevel', 'error', '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-s', size, '-r', str(FPS), '-i', '-',
                            '-vf', flt, '-c:v', 'libx264', '-preset', 'medium', '-crf', str(crf), '-x264-params', 'aq-mode=3:keyint=96:min-keyint=96', '-maxrate', maxrate, '-bufsize', '3000k',
                            '-pix_fmt', 'yuv420p', '-an', out], stdin=subprocess.PIPE)
@@ -1013,7 +1019,8 @@ def render_segment(args):
         t = i / FPS; f = a.frame(t)
         if t > seg - xf:
             u = (t - (seg - xf)) / xf; u = u * u * (3 - 2 * u); f = transition(kind, f, b.frame(t - seg), u)
-        if pix and is_vhs(names[k]): f = _CP.vhs(f, k * seg + t, seed)
+        if raw: pass
+        elif pix and is_vhs(names[k]): f = _CP.vhs(f, k * seg + t, seed)
         elif pix: f = _PX.grade_px(f)
         else: f = grade(f, grains[i % len(grains)]); f = camera(f, (k * seg + t) / T)
         ff.stdin.write((np.clip(f, 0, 1) * 255).astype(np.uint8).tobytes())
@@ -1041,6 +1048,7 @@ def make_loop(names, seed, path, seg=90.0, xf=8.0, crf=21, procs=None, maxrate='
 
 
 def still(name, seed, t=20.0):
+    if is_raw(name): return SCENES[name](seed).frame(t)
     if is_vhs(name): return _CP.vhs(SCENES[name](seed).frame(t), 1.0, seed)
     if is_pixel(name): return _PX.grade_px(SCENES[name](seed).frame(t))
     f = grade(SCENES[name](seed).frame(t), 0.0); return np.clip(camera(f, .3), 0, 1)

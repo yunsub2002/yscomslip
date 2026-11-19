@@ -11,7 +11,7 @@ import make_video as MV, themes as T  # noqa: E402
 REPO = os.environ.get('GITHUB_REPOSITORY', 'yunsub2002/yscomslip')
 COUNT = int(os.environ.get('COUNT') or 1); THEME = (os.environ.get('THEME') or 'auto').strip(); MINUTES = (os.environ.get('MINUTES') or 'auto').strip()
 # THEME: auto / 테마 이름 / 쉼표로 여러 개 / dream3 (드림코어 도트 3편: 막차 · 비 오는 방 · 구름 복도)
-REQ = T.CITYPOP3 if THEME == 'citypop3' else T.DREAM3 if THEME == 'dream3' else [x.strip() for x in THEME.split(',') if x.strip() in T.THEMES]
+REQ = T.RAIN2 if THEME == 'rain2' else T.CITYPOP3 if THEME == 'citypop3' else T.DREAM3 if THEME == 'dream3' else [x.strip() for x in THEME.split(',') if x.strip() in T.THEMES]
 COUNT = max(COUNT, len(REQ))
 
 
@@ -79,7 +79,7 @@ def main():
         vol = sum(1 for v in db if v['theme'] == th) + sum(1 for m in made if m['theme'] == th) + 1
         seed = int(stamp.strftime('%m%d%H%M')) * 10 + i
         print(f'\n===== [{i + 1}/{COUNT}] {T.THEMES[th]["name"]} Vol.{vol} (seed {seed}) =====', flush=True)
-        mins = int(MINUTES) if MINUTES.isdigit() else (180 if (len(db) + i) % 2 == 0 else 120)   # auto: 3시간 → 2시간 번갈아
+        mins = T.THEMES[th].get('minutes') or (int(MINUTES) if MINUTES.isdigit() else (180 if (len(db) + i) % 2 == 0 else 120))   # 테마에 길이가 정해져 있으면 그 길이 (썸네일 속 시간과 맞춤) · auto: 3시간 → 2시간 번갈아
         print(f'  길이 {mins // 60}시간' + (f' {mins % 60}분' if mins % 60 else ''), flush=True)
         m = MV.make(th, seed, mins, out, vol=vol, seg=float(os.environ.get('SEG') or 90), log=lambda s: print(s, flush=True)); m['vol'] = vol; made.append(m); last = th
     files = [out / x for m in made for x in (m['file'], m['thumb'])] + [out / x for m in made if m.get('short') for x in (m['short']['file'], m['short']['thumb'])]

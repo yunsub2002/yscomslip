@@ -625,6 +625,7 @@ SCENE_AMB = {
     'snowwin': {'wind': -20, 'fire': -21, 'clock': -28}, 'tentrain': {'tent': -5, 'thunder': -16},
     'px_train': {'train': -9, 'city': -26}, 'px_city': {'city': -15, 'wind': -24}, 'px_room': {'rain': -12, 'vinyl': -18},
     'px_clouds': {'wind': -22, 'chimes': -22}, 'px_pool': {'drips': -15, 'underwater': -22}, 'px_street': {'rain': -8, 'city': -21},
+    'img_shinjuku': {'rain': -8, 'city': -20}, 'img_office_street': {'rain': -8, 'city': -22}, 'img_la_main': {'rain': -8, 'city': -21}, 'img_la_sunset': {'rain': -9, 'wind': -26}, 'img_manhattan': {'rain': -12, 'vinyl': -21, 'city': -27},
     'cp_room': {'city': -21, 'vinyl': -15}, 'cp_drive': {'brown': -14, 'wind': -24, 'city': -24}, 'cp_boulevard': {'waves': -11, 'wind': -24},
 }
 

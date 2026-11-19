@@ -30,7 +30,8 @@ def _pxtext(d, xy, txt, size, fill, shadow=True, font=None):
 def _osd(d, xy, txt, size, fill=(255, 255, 255, 255), stroke=3, anchor='la'):
     """캠코더 화면 글자: 굵은 도트 글꼴 + 검은 테두리"""
     from PIL import ImageFont
-    f = ImageFont.truetype(PXFONT, size); d.text(xy, txt, font=f, fill=fill, stroke_width=stroke, stroke_fill=(10, 6, 20, 255), anchor=anchor)
+    cjk = any(0x3040 <= ord(c) <= 0x9fff for c in txt)                                  # 한자·가나는 굵은 도트 글꼴에 없음 → 일반 도트 글꼴
+    f = ImageFont.truetype(PXFONT_R if cjk else PXFONT, size); d.text(xy, txt, font=f, fill=fill, stroke_width=stroke, stroke_fill=(10, 6, 20, 255), anchor=anchor)
 
 
 def thumbnail_cp(th, seed, path, vol=None, minutes=60):
@@ -50,9 +51,24 @@ def thumbnail_cp(th, seed, path, vol=None, minutes=60):
     img.convert('RGB').save(path, quality=93)
 
 
+def thumbnail_file(th, seed, path, vol=None, minutes=60):
+    """채널 주인이 준 그림을 그대로 썸네일로 (16:9 로 맞추기만). text=True 면 아래에 작은 도트 제목"""
+    from PIL import Image, ImageDraw
+    im = Image.open(BOT / 'assets' / th['thumb_file']).convert('RGB'); s_ = max(1280 / im.width, 720 / im.height)
+    im = im.resize((round(im.width * s_), round(im.height * s_)), Image.LANCZOS); x0, y0 = (im.width - 1280) // 2, (im.height - 720) // 2
+    img = im.crop((x0, y0, x0 + 1280, y0 + 720)).convert('RGBA')
+    if th.get('thumb_text', True):
+        lay = Image.new('RGBA', (640, 360), (0, 0, 0, 0)); d = ImageDraw.Draw(lay)
+        for y in range(270, 360): d.line([(0, y), (640, y)], fill=(8, 4, 24, int(160 * ((y - 270) / 90) ** 1.3)))
+        en, ko = th['short']; _pxtext(d, (24, 296), en, 22, (255, 255, 255, 255)); _osd(d, (26, 328), ko, 13, fill=(255, 236, 250, 255), stroke=2)
+        _osd(d, (616, 18), f'♪ {dur_ko(minutes).strip()}', 16, stroke=2, anchor='ra')
+        img = Image.alpha_composite(img, lay.resize((1280, 720), Image.NEAREST))
+    img.convert('RGB').save(path, quality=93)
+
 def thumbnail_px(th, seed, path, vol=None, minutes=60):
     """도트 테마 썸네일: 도트 장면 전체 + 와이드 영문 제목 + 한글 도트 부제 + 길이 배지 (모두 각진 도트)"""
     from PIL import Image, ImageDraw
+    if th.get('thumb_file'): return thumbnail_file(th, seed, path, vol, minutes)
     if th.get('year'): return thumbnail_cp(th, seed, path, vol, minutes)
     f = V.still(th['thumb'], seed + 999, 37.0)
     img = Image.fromarray((np.clip(f, 0, 1) * 255).astype('uint8')).convert('RGBA')        # 1280x720
@@ -68,7 +84,7 @@ def thumbnail_px(th, seed, path, vol=None, minutes=60):
     img.convert('RGB').save(path, quality=93)
 
 
-SHORT_X = {'px_room': .64, 'px_street': .62, 'cp_room': .7, 'cp_drive': .47, 'cp_boulevard': .34}       # 세로 쇼츠로 자를 때 장면별 가운데 위치
+SHORT_X = {'px_room': .64, 'px_street': .62, 'cp_room': .7, 'cp_drive': .47, 'cp_boulevard': .34, 'img_shinjuku': .45, 'img_la_main': .12, 'img_office_street': .5, 'img_la_sunset': .55, 'img_manhattan': .3}       # 세로 쇼츠로 자를 때 장면별 가운데 위치
 
 
 def make_short(th, theme, seed, wav, out, name, minutes, secs=45, start=300.0, log=print):
@@ -96,19 +112,20 @@ def make_short(th, theme, seed, wav, out, name, minutes, secs=45, start=300.0, l
     d.rectangle([(360 - wf_) / 2 - 10, 560, (360 + wf_) / 2 + 10, 584], fill=(255, 79, 200, 210)); d.text(((360 - wf_) / 2, 566), full, font=fk, fill=(255, 255, 255, 255))
     ovp = out / f'{name}_short_ov.png'; ov.resize((1080, 1920), Image.NEAREST).save(ovp)
     mp4 = out / f'{name}_short.mp4'; FPS = V.FPS; n = int(secs * FPS)
-    flt = f"[0:v]scale=1080:1920:flags={'neighbor' if pix else 'lanczos'}[b];[b][1:v]overlay=0:0,format=yuv420p[v]"
+    raw = V.is_raw(th['thumb'])
+    flt = f"[0:v]scale=1080:1920:flags={'neighbor' if pix and not raw else 'lanczos'}[b];[b][1:v]overlay=0:0,format=yuv420p[v]"
     ff = subprocess.Popen(['ffmpeg', '-y', '-loglevel', 'error', '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-s', f'{cw}x{ch}', '-r', str(FPS), '-i', '-',
                            '-loop', '1', '-i', str(ovp), '-ss', str(start), '-t', str(secs), '-i', str(wav),
                            '-filter_complex', flt, '-map', '[v]', '-map', '2:a', '-af', f'afade=t=in:d=1.5,afade=t=out:st={secs - 3}:d=3,volume=3dB,alimiter=limit=0.89:level=false',
                            '-c:v', 'libx264', '-preset', 'medium', '-crf', '22', '-maxrate', '7M', '-bufsize', '14M', '-c:a', 'aac', '-b:a', '160k', '-t', str(secs), '-shortest', '-movflags', '+faststart', str(mp4)], stdin=subprocess.PIPE)
     first = None
     for i in range(n):
-        f = sc.frame(i / FPS); f = V._CP.vhs(f, i / FPS, seed) if V.is_vhs(th['thumb']) else V._PX.grade_px(f) if pix else np.clip(V.grade(f, 0.0), 0, 1)
+        f = sc.frame(i / FPS); f = f if raw else V._CP.vhs(f, i / FPS, seed) if V.is_vhs(th['thumb']) else V._PX.grade_px(f) if pix else np.clip(V.grade(f, 0.0), 0, 1)
         f = (np.clip(f[y0:y0 + ch, x0:x0 + cw], 0, 1) * 255).astype(np.uint8)
         if first is None: first = f
         ff.stdin.write(f.tobytes())
     ff.stdin.close(); ff.wait()
-    th_img = Image.fromarray(first).resize((1080, 1920), Image.NEAREST if pix else Image.LANCZOS).convert('RGBA')
+    th_img = Image.fromarray(first).resize((1080, 1920), Image.NEAREST if pix and not raw else Image.LANCZOS).convert('RGBA')
     thumb = out / f'{name}_short_thumb.jpg'; Image.alpha_composite(th_img, Image.open(ovp)).convert('RGB').save(thumb, quality=92); ovp.unlink()
     title = (f"{en} {th['emoji']} 잠들기 전 1분 | {th['name']} #shorts")[:100]
     tags = list(dict.fromkeys(th['tags'][:10] + ['shorts', '쇼츠']))
@@ -162,7 +179,7 @@ def dur_ko(minutes):
 SCENE_KO = {'night': '밤하늘', 'rainwin': '비 오는 창', 'sea': '달빛 바다', 'firefly': '반딧불 숲', 'snow': '눈 오는 밤', 'aurora': '오로라', 'pastel': '파스텔 구름',
             'warm': '따뜻한 불빛', 'eaves': '한옥 처마', 'storm': '번개 치는 창', 'nursery': '아기 방', 'stream': '달빛 시냇물', 'candle': '촛불', 'study': '늦은 밤 서재',
             'bamboo': '달빛 대숲', 'pond': '비 오는 연못', 'camp': '별빛 캠핑', 'underwater': '깊은 바닷속', 'meadow': '별 쏟아지는 초원', 'snowwin': '눈 오는 창가', 'tentrain': '텐트 안 빗소리',
-            **V._PX.PX_KO, **V._CP.CP_KO}
+            **V._PX.PX_KO, **V._CP.CP_KO, **V._RI.IMG_KO}
 
 
 def yt_text(th, vol, songs, minutes, seg=90.0):
