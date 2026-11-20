@@ -131,6 +131,7 @@ def make_short(th, theme, seed, wav, out, name, minutes, secs=45, start=300.0, l
     tags = list(dict.fromkeys(th['tags'][:10] + ['shorts', '쇼츠']))
     body = f"""{th['desc'].split('.')[0]}.
 🌙 풀버전({dur_ko(minutes).strip()})은 채널에서 끊김 없이 들을 수 있어요.
+🔔 구독하면 매주 화·금 새 수면음악 → https://www.youtube.com/channel/UCV2yZPs2ZaFXZE3x-gXfFBg?sub_confirmation=1
 
 음악·소리·영상은 모두 이 채널이 직접 프로그램으로 작곡·합성·제작했습니다.
 
@@ -217,6 +218,11 @@ def yt_text(th, vol, songs, minutes, seg=90.0):
 이 영상의 음악, 자연의 소리, 배경 영상은 모두 이 채널에서 직접 프로그램으로 작곡·합성·제작한 창작물입니다. 외부 음원이나 샘플, 스톡 영상을 사용하지 않았습니다.
 
 🔔 매주 화요일·금요일 저녁, 새 수면음악이 올라옵니다. 구독하고 함께 푹 자요.
+👉 https://www.youtube.com/channel/UCV2yZPs2ZaFXZE3x-gXfFBg?sub_confirmation=1
+
+📺 같이 보면 좋은 채널
+· 이상한 이야기 귀담 — 잠들기 전 듣는 실화 괴담·미스터리 https://www.youtube.com/@귀담스토리
+· 세상의 모든 이야기 — 매일 1분 경제·생활 뉴스 https://www.youtube.com/@세상의모든이야기g1-c
 
 {' '.join('#' + t.replace(' ', '') for t in tags[:8])}"""
     return title[:100], body, tags
