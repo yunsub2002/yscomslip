@@ -2,20 +2,20 @@ name: 수면음악 자동 제작
 
 on:
   schedule:
-    - cron: '7 10 * * 2,5'      # 매주 화·금 19:07 (한국 시간) — 한 번에 1편씩, 주 2편
+    - cron: '7 10 * * 5'        # 매주 금 19:07 (한국 시간) — 주 1편 (3시간)
   workflow_dispatch:
     inputs:
       theme:
         description: '테마 (auto = 순서대로 · citypop3 = 시티팝 3편 · dream3 = 드림코어 도트 3편)'
         type: choice
         default: auto
-        options: [auto, rain2, rain_tokyo1989, rain_ny1985, citypop3, citypop_drive, citypop_mansion, citypop_miami, dream3, dream_lasttrain, dream_rainroom, dream_cloudhall, rain_lullaby, brown_noise, humming_lullaby, waves_piano, lotus_gayageum, felt_nocturne, womb, rain_only, lullaby, camping_guitar, meadow_ocarina, fire_piano, white_noise, stream_kalimba, firefly_lullaby, bamboo_daegeum, kalimba_lullaby, deep_sea, night_guitar, tent_rain, windchime, thunder_piano, cat_purr, clock_epiano, flute_meditation, snow_harp, singing_bowl]
+        options: [auto, dream_aquatic, rain2, rain_tokyo1989, rain_ny1985, citypop3, citypop_drive, citypop_mansion, citypop_miami, dream3, dream_lasttrain, dream_rainroom, dream_cloudhall, rain_lullaby, brown_noise, humming_lullaby, waves_piano, lotus_gayageum, felt_nocturne, womb, rain_only, lullaby, camping_guitar, meadow_ocarina, fire_piano, white_noise, stream_kalimba, firefly_lullaby, bamboo_daegeum, kalimba_lullaby, deep_sea, night_guitar, tent_rain, windchime, thunder_piano, cat_purr, clock_epiano, flute_meditation, snow_harp, singing_bowl]
       count:
         description: '이번에 만들 편수 (citypop3·dream3 는 자동으로 3편)'
         default: '1'
       minutes:
         description: '영상 길이(분) — auto = 2시간·3시간 번갈아'
-        default: 'auto'
+        default: '180'
 
 permissions:
   contents: write
@@ -43,5 +43,5 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           THEME: ${{ github.event.inputs.theme || 'auto' }}
           COUNT: ${{ github.event.inputs.count || '1' }}
-          MINUTES: ${{ github.event.inputs.minutes || 'auto' }}
+          MINUTES: ${{ github.event.inputs.minutes || '180' }}
         run: python sleep_bot/weekly.py

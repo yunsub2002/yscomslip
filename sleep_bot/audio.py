@@ -192,6 +192,8 @@ STYLE = {
     'dream_glass':   dict(mode='dream', pad='synth', padv=.8, keys='epiano', keysv=.24, mel='glass', melv=.26, meld=.5, bpm=(54, 62), scales=['lydian', 'major'], wet=.58, width=1.5, tape=True, gain=-1.5),
     'citypop':       dict(mode='dream', pad='synth', padv=.68, keys='epiano', keysv=.34, mel='synthlead', melv=.3, meld=.7, bpm=(64, 74), scales=['major', 'lydian'], wet=.46, width=1.4, tape=True, gain=-1.0),
     'citypop_vibes': dict(mode='dream', pad='synth', padv=.66, keys='epiano', keysv=.32, mel='vibes', melv=.32, meld=.7, bpm=(62, 72), scales=['major', 'mixo'], wet=.48, width=1.4, tape=True, gain=-1.0),
+    'aquatic':       dict(mode='dream', pad='synth', padv=.85, keys='epiano', keysv=.22, mel='vibes', melv=.24, meld=.45, bpm=(52, 58), scales=['dorian', 'lydian'], wet=.66, width=1.6, tape=True, gain=-1.5),   # 물속처럼 느리고 넓게 울리는 90년대 게임 감성 앰비언트 (새로 작곡)
+    'aquatic_amb':   dict(mode='ambient', voices=['glass', 'vibes', 'epiano', 'glass'], drone='synth', scales=['dorian', 'lydian'], wet=.68, width=1.6, tape=True),
     'dream_ambient': dict(mode='ambient', voices=['epiano', 'glass', 'synthlead', 'epiano', 'vibes'], drone='synth', scales=['lydian', 'major'], wet=.58, width=1.5, tape=True),
     'flute_drone': dict(mode='drone', mel='flute', drone='strings', chord='choir', scales=['dorian', 'mixo', 'lydian'], wet=.5),
     'hum_drone':   dict(mode='drone', mel='hum', drone='choir', chord='pad', scales=['dorian', 'major'], wet=.5),

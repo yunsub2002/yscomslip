@@ -198,6 +198,13 @@ THEMES = {
         sub='드림코어 · 리미널 스페이스 앰비언트 수면음악',
         desc='분홍 체크무늬 바닥이 끝없이 이어지는 구름 위 복도, 아무도 없는 밤의 실내 수영장. 어디선가 본 것 같은 낯익은 꿈속 공간에서 유리 종과 신스 패드가 천천히 퍼집니다.',
         tags=['드림코어', 'dreamcore', '리미널 스페이스', 'liminal space', '앰비언트', 'ambient', '도트', '픽셀아트', 'pixel art', '베이퍼웨이브', 'vaporwave', '수면음악', '명상음악', 'sleep music', '꿈', 'weirdcore']),
+    'dream_aquatic': dict(
+        name='1995 물속 유적, 꿈속 앰비언트', en='ａｑｕａｔｉｃ　ｄｒｅａｍ', year='1995.', short=['ａｑｕａｔｉｃ　ｄｒｅａｍ', '물속 유적에서 잠들기'], emoji='🫧',
+        style=['aquatic', 'aquatic_amb', 'aquatic', 'dream_glass'], layers={'underwater': -22, 'vinyl': -24}, pixel=True,
+        scenes=['px_pool', 'px_clouds', 'px_pool', 'px_room', 'px_pool', 'px_clouds'], thumb='px_pool', glow='#6fe7ff', kids=False, scene_db=-2,
+        sub='90년대 게임 감성 · 물속 드림코어 앰비언트 수면음악',
+        desc='어릴 적 밤늦게 켜 두던 오래된 게임기, 물속 스테이지에서 흐르던 그 느리고 몽글한 음악을 떠올리며 새로 작곡했습니다. 아무도 없는 밤의 실내 수영장과 구름 복도 위로 넓게 퍼지는 신스 패드와 비브라폰, 멀리서 들리는 물소리.',
+        tags=['드림코어', 'dreamcore', '앰비언트', 'ambient', '물속 음악', 'underwater ambience', '90년대 게임 감성', 'nostalgia', '향수', '리미널 스페이스', 'liminal space', '도트', '픽셀아트', 'pixel art', '수면음악', 'sleep music', 'vaporwave', '로파이']),
     # ───────── 시티팝 (1980~90년대 일본 버블 · 미국 80년대) — 고해상도 도트 + VHS, 썸네일에 캠코더식 연도
     'citypop_drive': dict(
         name='1988 도쿄, 퇴근길 밤의 고속도로', en='ｍｉｄｎｉｇｈｔ　ｄｒｉｖｅ', year='1988.', short=['ｍｉｄｎｉｇｈｔ　ｄｒｉｖｅ', '퇴근길 밤의 고속도로'], emoji='🌃',
@@ -239,10 +246,12 @@ THEMES = {
         tags=['신스웨이브', 'synthwave', '드림코어', 'dreamcore', '빗소리', 'rain', '80년대', '1985', '뉴욕', '맨해튼', 'LA', '로스앤젤레스', '레트로', 'retrowave', '로파이', 'lofi', '도트', '픽셀아트', '수면음악', 'VHS']),
 }
 # 아기 테마와 어른 테마가 번갈아 나오도록
-ROTATION = ['rain_lullaby', 'brown_noise', 'humming_lullaby', 'waves_piano', 'lotus_gayageum', 'felt_nocturne', 'womb', 'rain_only', 'lullaby', 'camping_guitar',
+OLD_ROTATION = ['rain_lullaby', 'brown_noise', 'humming_lullaby', 'waves_piano', 'lotus_gayageum', 'felt_nocturne', 'womb', 'rain_only', 'lullaby', 'camping_guitar',
             'meadow_ocarina', 'fire_piano', 'white_noise', 'stream_kalimba', 'firefly_lullaby', 'bamboo_daegeum', 'kalimba_lullaby', 'deep_sea',
             'night_guitar', 'tent_rain', 'windchime', 'citypop_drive', 'thunder_piano', 'cat_purr', 'clock_epiano', 'citypop_mansion', 'flute_meditation', 'snow_harp', 'singing_bowl', 'citypop_miami']
 DREAM3 = ['dream_lasttrain', 'dream_rainroom', 'dream_cloudhall']          # 320 도트 드림코어 (자동 순서에서는 뺌, 직접 고를 때만)
 CITYPOP3 = ['citypop_drive', 'citypop_mansion', 'citypop_miami']
 RAIN2 = ['rain_tokyo1989', 'rain_ny1985']                                 # 비 오는 80~90년대 도시 (직접 고를 때만)
-assert set(ROTATION) | set(DREAM3) | set(RAIN2) == set(THEMES) and len(ROTATION) == len(set(ROTATION))
+# 2026-11-27 채널 콘셉트 변경: 주 1회 3시간 · 드림코어 / 시티팝 드림코어 / 90년대 향수 앰비언트만 순서대로
+ROTATION = ['dream_aquatic', 'rain_tokyo1989', 'citypop_drive', 'dream_lasttrain', 'rain_ny1985', 'citypop_mansion', 'dream_rainroom', 'citypop_miami', 'dream_cloudhall']
+assert set(OLD_ROTATION) | set(DREAM3) | set(RAIN2) | set(ROTATION) == set(THEMES) and len(ROTATION) == len(set(ROTATION)) and set(ROTATION) <= set(THEMES)

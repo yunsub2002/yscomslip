@@ -113,9 +113,14 @@ def make_short(th, theme, seed, wav, out, name, minutes, secs=45, start=300.0, l
     ovp = out / f'{name}_short_ov.png'; ov.resize((1080, 1920), Image.NEAREST).save(ovp)
     mp4 = out / f'{name}_short.mp4'; FPS = V.FPS; n = int(secs * FPS)
     raw = V.is_raw(th['thumb'])
-    flt = f"[0:v]scale=1080:1920:flags={'neighbor' if pix and not raw else 'lanczos'}[b];[b][1:v]overlay=0:0,format=yuv420p[v]"
+    # 끝 5초: 구독 버튼 (영상 안에 직접 — 숏츠에서는 워터마크가 안 보여서)
+    subp = out / f'{name}_short_sub.png'; sb = Image.new('RGBA', (1080, 1920), (0, 0, 0, 0)); sd = ImageDraw.Draw(sb)
+    sd.rounded_rectangle([340, 1330, 740, 1440], 55, fill=(230, 33, 23, 235)); fsb = ImageFont.truetype(PXFONT, 44); tw = fsb.getlength('구독')
+    sd.text(((1080 - tw) / 2, 1360), '구독', font=fsb, fill=(255, 255, 255, 255))
+    fs2 = ImageFont.truetype(PXFONT, 26); t2 = '매주 화·금 새 수면음악'; sd.text(((1080 - fs2.getlength(t2)) / 2, 1460), t2, font=fs2, fill=(255, 236, 250, 255)); sb.save(subp)
+    flt = f"[0:v]scale=1080:1920:flags={'neighbor' if pix and not raw else 'lanczos'}[b];[b][1:v]overlay=0:0[c];[c][3:v]overlay=0:0:enable='gte(t,{secs - 5})',format=yuv420p[v]"
     ff = subprocess.Popen(['ffmpeg', '-y', '-loglevel', 'error', '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-s', f'{cw}x{ch}', '-r', str(FPS), '-i', '-',
-                           '-loop', '1', '-i', str(ovp), '-ss', str(start), '-t', str(secs), '-i', str(wav),
+                           '-loop', '1', '-i', str(ovp), '-ss', str(start), '-t', str(secs), '-i', str(wav), '-loop', '1', '-i', str(subp),
                            '-filter_complex', flt, '-map', '[v]', '-map', '2:a', '-af', f'afade=t=in:d=1.5,afade=t=out:st={secs - 3}:d=3,volume=3dB,alimiter=limit=0.89:level=false',
                            '-c:v', 'libx264', '-preset', 'medium', '-crf', '22', '-maxrate', '7M', '-bufsize', '14M', '-c:a', 'aac', '-b:a', '160k', '-t', str(secs), '-shortest', '-movflags', '+faststart', str(mp4)], stdin=subprocess.PIPE)
     first = None
